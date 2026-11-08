@@ -1,14 +1,14 @@
 /* ===== MÀU SẮC VÀ FONT (khai báo một lần, dùng nhiều lần) ===== */
 :root {
-  --nen: #eef2f5;
-  --trang: #ffffff;
-  --chu: #14233b;
-  --chu-phu: #55657a;
-  --khung: #cbd5e1;
-  --nhan: #1f5fbf;
-  --xanh: #1e9e6a;
-  --vang: #e7a416;
-  --do: #d8402f;
+  --bg: #eef2f5;
+  --surface: #ffffff;
+  --text: #14233b;
+  --text-muted: #55657a;
+  --border: #cbd5e1;
+  --primary: #1f5fbf;
+  --green: #1e9e6a;
+  --yellow: #e7a416;
+  --red: #d8402f;
 }
 
 /* ===== THIẾT LẬP CHUNG ===== */
@@ -23,8 +23,8 @@ html {
 body {
   margin: 0;
   font-family: "Be Vietnam Pro", Arial, sans-serif;
-  background: var(--nen);
-  color: var(--chu);
+  background: var(--bg);
+  color: var(--text);
   line-height: 1.6;
 }
 
@@ -42,13 +42,13 @@ a {
 }
 
 /* ===== ĐẦU TRANG ===== */
-.dau-trang {
+.site-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 14px 32px;
-  background: var(--trang);
-  border-bottom: 1px solid var(--khung);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -61,91 +61,91 @@ a {
 }
 
 .logo span {
-  color: var(--nhan);
+  color: var(--primary);
 }
 
 .menu a {
   margin-left: 22px;
   text-decoration: none;
-  color: var(--chu-phu);
+  color: var(--text-muted);
   font-weight: 500;
 }
 
 .menu a:hover {
-  color: var(--nhan);
+  color: var(--primary);
 }
 
 /* ===== GIỚI THIỆU ===== */
-.gioi-thieu {
+.hero {
   max-width: 820px;
   margin: 0 auto;
   padding: 72px 24px 40px;
   text-align: center;
 }
 
-.gioi-thieu h1 {
+.hero h1 {
   font-size: 44px;
   font-weight: 800;
 }
 
-.gioi-thieu p {
+.hero p {
   font-size: 18px;
-  color: var(--chu-phu);
+  color: var(--text-muted);
 }
 
-.nut {
+.btn {
   display: inline-block;
   margin-top: 12px;
   padding: 12px 28px;
-  background: var(--nhan);
+  background: var(--primary);
   color: #ffffff;
   text-decoration: none;
   font-weight: 700;
   border-radius: 8px;
 }
 
-.nut:hover {
+.btn:hover {
   background: #174a96;
 }
 
-.nut:focus-visible,
+.btn:focus-visible,
 .menu a:focus-visible,
 .logo:focus-visible {
-  outline: 3px solid var(--vang);
+  outline: 3px solid var(--yellow);
   outline-offset: 3px;
 }
 
 /* ===== CÁC KHỐI NỘI DUNG ===== */
-.vung {
+.section {
   max-width: 980px;
   margin: 0 auto;
   padding: 48px 24px;
 }
 
-.vung-xam {
+.section-gray {
   max-width: none;
   background: #e3e9ef;
 }
 
-.vung-xam > * {
+.section-gray > * {
   max-width: 932px;
   margin-left: auto;
   margin-right: auto;
 }
 
-.vung h2 {
+.section h2 {
   font-size: 28px;
 }
 
-.mo-ta {
-  color: var(--chu-phu);
+.section-desc {
+  color: var(--text-muted);
   margin-bottom: 24px;
 }
 
 /* ===== BẢNG DỰ BÁO ===== */
 
 /* Ẩn 4 nút radio nhưng vẫn cho phép dùng bàn phím */
-.du-bao input {
+.forecast input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -160,43 +160,43 @@ a {
 
 .tab label {
   padding: 10px 20px;
-  background: var(--trang);
-  border: 1px solid var(--khung);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 999px;
   cursor: pointer;
   font-weight: 500;
 }
 
 .tab label:hover {
-  border-color: var(--nhan);
+  border-color: var(--primary);
 }
 
 /* Nhãn đang được chọn */
-#t1:checked ~ .tab label[for="t1"],
-#t2:checked ~ .tab label[for="t2"],
-#t3:checked ~ .tab label[for="t3"],
-#t4:checked ~ .tab label[for="t4"] {
-  background: var(--nhan);
-  border-color: var(--nhan);
+#time-1:checked ~ .tab label[for="time-1"],
+#time-2:checked ~ .tab label[for="time-2"],
+#time-3:checked ~ .tab label[for="time-3"],
+#time-4:checked ~ .tab label[for="time-4"] {
+  background: var(--primary);
+  border-color: var(--primary);
   color: #ffffff;
 }
 
 /* Viền focus khi dùng phím mũi tên */
-#t1:focus-visible ~ .tab label[for="t1"],
-#t2:focus-visible ~ .tab label[for="t2"],
-#t3:focus-visible ~ .tab label[for="t3"],
-#t4:focus-visible ~ .tab label[for="t4"] {
-  outline: 3px solid var(--vang);
+#time-1:focus-visible ~ .tab label[for="time-1"],
+#time-2:focus-visible ~ .tab label[for="time-2"],
+#time-3:focus-visible ~ .tab label[for="time-3"],
+#time-4:focus-visible ~ .tab label[for="time-4"] {
+  outline: 3px solid var(--yellow);
   outline-offset: 2px;
 }
 
-.chu-thich {
+.legend {
   margin-bottom: 16px;
   font-size: 14px;
-  color: var(--chu-phu);
+  color: var(--text-muted);
 }
 
-.cham {
+.legend-dot {
   display: inline-block;
   width: 12px;
   height: 12px;
@@ -205,56 +205,56 @@ a {
   vertical-align: middle;
 }
 
-.cham:first-child {
+.legend-dot:first-child {
   margin-left: 0;
 }
 
-.cham.xanh { background: var(--xanh); }
-.cham.vang { background: var(--vang); }
-.cham.do   { background: var(--do); }
+.legend-dot.green { background: var(--green); }
+.legend-dot.yellow { background: var(--yellow); }
+.legend-dot.red   { background: var(--red); }
 
-.bang {
-  background: var(--trang);
-  border: 1px solid var(--khung);
+.forecast-table {
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
 }
 
-.hang {
+.row {
   display: grid;
   grid-template-columns: 1fr 1.4fr;
   gap: 16px;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--khung);
+  border-bottom: 1px solid var(--border);
 }
 
-.hang:last-child {
+.row:last-child {
   border-bottom: none;
 }
 
-.tuyen strong {
+.route strong {
   display: block;
 }
 
-.tuyen small {
-  color: var(--chu-phu);
+.route small {
+  color: var(--text-muted);
 }
 
 /* Mỗi tuyến có 4 ô dữ liệu, mặc định ẩn hết */
-.muc {
+.level {
   display: none;
 }
 
 /* Chỉ hiện ô tương ứng với khung giờ đang chọn */
-#t1:checked ~ .bang .ca1,
-#t2:checked ~ .bang .ca2,
-#t3:checked ~ .bang .ca3,
-#t4:checked ~ .bang .ca4 {
+#time-1:checked ~ .forecast-table .slot-1,
+#time-2:checked ~ .forecast-table .slot-2,
+#time-3:checked ~ .forecast-table .slot-3,
+#time-4:checked ~ .forecast-table .slot-4 {
   display: block;
 }
 
-.khung-thanh {
+.bar-track {
   height: 12px;
   background: #e3e9ef;
   border-radius: 999px;
@@ -262,92 +262,92 @@ a {
   margin-bottom: 6px;
 }
 
-.thanh {
+.bar {
   height: 100%;
   border-radius: 999px;
   transition: width 0.4s;
 }
 
-.muc span {
+.level span {
   font-size: 14px;
   font-weight: 500;
 }
 
-.muc.xanh .thanh { background: var(--xanh); }
-.muc.vang .thanh { background: var(--vang); }
-.muc.do .thanh   { background: var(--do); }
+.level.green .bar { background: var(--green); }
+.level.yellow .bar { background: var(--yellow); }
+.level.red .bar   { background: var(--red); }
 
 /* ===== GỢI Ý CỦA AI ===== */
-.goi-y > div {
+.tips > div {
   display: none;
   margin-top: 16px;
   padding: 16px 20px;
   background: #dfeafb;
-  border-left: 5px solid var(--nhan);
+  border-left: 5px solid var(--primary);
   border-radius: 8px;
 }
 
-#t1:checked ~ .goi-y .ga1,
-#t2:checked ~ .goi-y .ga2,
-#t3:checked ~ .goi-y .ga3,
-#t4:checked ~ .goi-y .ga4 {
+#time-1:checked ~ .tips .tip-1,
+#time-2:checked ~ .tips .tip-2,
+#time-3:checked ~ .tips .tip-3,
+#time-4:checked ~ .tips .tip-4 {
   display: block;
 }
 
 /* ===== ĐIỂM NÓNG ===== */
-.luoi {
+.grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 16px;
 }
 
-.the {
-  background: var(--trang);
-  border: 1px solid var(--khung);
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 20px;
 }
 
-.the h3 {
+.card h3 {
   font-size: 18px;
 }
 
-.the p {
+.card p {
   font-size: 15px;
-  color: var(--chu-phu);
+  color: var(--text-muted);
 }
 
-.the .muc-do {
+.card .level-label {
   font-weight: 700;
   font-size: 14px;
 }
 
-.do-chu   { color: var(--do) !important; }
-.vang-chu { color: #a8730a !important; }
-.xanh-chu { color: var(--xanh) !important; }
+.text-red   { color: var(--red) !important; }
+.text-yellow { color: #a8730a !important; }
+.text-green { color: var(--green) !important; }
 
 /* ===== CÁC BƯỚC HOẠT ĐỘNG ===== */
-.cac-buoc {
+.steps {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
-  counter-reset: buoc;
+  counter-reset: step;
 }
 
-.cac-buoc li {
+.steps li {
   position: relative;
-  background: var(--trang);
-  border: 1px solid var(--khung);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px 20px 20px 64px;
-  counter-increment: buoc;
+  counter-increment: step;
 }
 
-.cac-buoc li::before {
-  content: counter(buoc);
+.steps li::before {
+  content: counter(step);
   position: absolute;
   left: 20px;
   top: 22px;
@@ -355,23 +355,23 @@ a {
   height: 30px;
   line-height: 30px;
   text-align: center;
-  background: var(--nhan);
+  background: var(--primary);
   color: #ffffff;
   font-weight: 700;
   border-radius: 50%;
 }
 
-.cac-buoc h3 {
+.steps h3 {
   font-size: 18px;
 }
 
-.cac-buoc p {
+.steps p {
   font-size: 15px;
-  color: var(--chu-phu);
+  color: var(--text-muted);
 }
 
 /* ===== KẾT NỐI BACKEND ===== */
-button.nut {
+button.btn {
   border: none;
   cursor: pointer;
   font-family: inherit;
@@ -379,28 +379,28 @@ button.nut {
   margin-top: 0;
 }
 
-button.nut:focus-visible {
-  outline: 3px solid var(--vang);
+button.btn:focus-visible {
+  outline: 3px solid var(--yellow);
   outline-offset: 3px;
 }
 
-.ket-qua {
+.result {
   margin-top: 16px;
   font-weight: 500;
 }
 
 /* ===== CHÂN TRANG ===== */
-.chan-trang {
+.site-footer {
   padding: 24px;
   text-align: center;
   font-size: 14px;
-  color: var(--chu-phu);
-  border-top: 1px solid var(--khung);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
 }
 
 /* ===== MÀN HÌNH NHỎ (điện thoại) ===== */
 @media (max-width: 700px) {
-  .dau-trang {
+  .site-header {
     padding: 12px 16px;
   }
 
@@ -409,15 +409,15 @@ button.nut:focus-visible {
     font-size: 14px;
   }
 
-  .gioi-thieu {
+  .hero {
     padding-top: 48px;
   }
 
-  .gioi-thieu h1 {
+  .hero h1 {
     font-size: 30px;
   }
 
-  .hang {
+  .row {
     grid-template-columns: 1fr;
     gap: 8px;
   }
@@ -426,5 +426,5 @@ button.nut:focus-visible {
 /* Tôn trọng người dùng muốn giảm chuyển động */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .thanh { transition: none; }
+  .bar { transition: none; }
 }
