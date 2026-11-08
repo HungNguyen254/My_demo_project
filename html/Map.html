@@ -13,8 +13,8 @@
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
   <!-- Dùng lại style chung (header, màu sắc) rồi thêm style riêng cho trang bản đồ -->
-  <link rel="stylesheet" href="../css/main.css">
-  <link rel="stylesheet" href="../css/Map.css">
+   <link rel="stylesheet" href="../css/main.css">
+  <link rel="stylesheet" crossorigin href="../css/Map.css">
 </head>
 <body class="map-page">
 
@@ -24,7 +24,6 @@
     <nav class="menu">
       <a href="main.html#forecast">Dự báo</a>
       <a href="Map.html" aria-current="page">Bản đồ</a>
-      <a href="main.html#connect">Kết nối</a>
     </nav>
   </header>
 
@@ -79,6 +78,7 @@
   <!-- Leaflet JS, sau đó đến script của trang -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="../js/Map.js"></script>
+  <script type="module" crossorigin src="../js/Map.js"></script>
+
 </body>
 </html>
