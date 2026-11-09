@@ -42,12 +42,13 @@
 
       <!-- Cảnh báo nhỏ khi ảnh bản đồ không tải được -->
       <div id="tile-warning" class="tile-warning" role="alert" hidden>
-        Không tải được ảnh nền bản đồ. Hãy kiểm tra kết nối mạng, và mở trang qua máy chủ cục bộ thay vì file://.
+        Không tải được ảnh nền OpenStreetMap. Hãy kiểm tra mạng, DNS, proxy hoặc firewall cho tile.openstreetmap.org.
       </div>
     </section>
 
     <!-- ===== PANEL THÔNG TIN ===== -->
     <aside class="panel" aria-label="Thông tin điểm nóng">
+<<<<<<< HEAD
       <h1>Điểm nóng ùn tắc</h1>
 
       <label class="time-label" for="time-select">Khung giờ dự báo</label>
@@ -71,6 +72,29 @@
       <div class="detail" id="detail">
         <p>Chọn một điểm trên bản đồ hoặc trong danh sách để xem chi tiết.</p>
       </div>
+=======
+      <h1>Tìm đường trên bản đồ</h1>
+      <form class="road-search" id="road-search">
+        <label class="time-label" for="road-query">Tìm đường trong dữ liệu giao thông từ Backend</label>
+        <div class="road-search-controls">
+          <input id="road-query" name="query" type="search" placeholder="Ví dụ: Đường Láng" required>
+          <button class="btn-secondary" id="search-btn" type="submit">Tìm</button>
+        </div>
+      </form>
+      <section class="traffic-legend" aria-labelledby="traffic-legend-title">
+        <h2 id="traffic-legend-title">Mức độ giao thông</h2>
+        <ul>
+          <li><span class="traffic-color green"></span><span>Thông thoáng <small>(trên 30 km/h)</small></span></li>
+          <li><span class="traffic-color yellow"></span><span>Di chuyển chậm <small>(15–30 km/h)</small></span></li>
+          <li><span class="traffic-color red"></span><span>Ùn tắc nghiêm trọng <small>(5–dưới 15 km/h)</small></span></li>
+          <li><span class="traffic-color darkred"></span><span>Kẹt xe hoàn toàn <small>(dưới 5 km/h)</small></span></li>
+        </ul>
+      </section>
+      <p class="search-attribution">Vị trí và tốc độ hiện là dữ liệu mẫu từ Backend. Ảnh nền bản đồ © OpenStreetMap contributors.</p>
+      <p class="search-status" id="search-status" role="status" aria-live="polite">Đang tải dữ liệu giao thông từ Backend…</p>
+      <ul class="list search-results" id="search-results" aria-label="Kết quả tìm kiếm"></ul>
+      <div class="detail" id="detail" hidden></div>
+>>>>>>> dacfd7a (UI)
     </aside>
 
   </div>

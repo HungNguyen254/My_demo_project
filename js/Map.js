@@ -1,4 +1,6 @@
+<<<<<<< HEAD
 // ===== CẤU HÌNH =====
+<<<<<<< HEAD
 const BACKEND_URL = "http://127.0.0.1:8000";
 const USE_SAMPLE = true; // true: dùng dữ liệu mẫu | false: lấy từ Backend (/api/hotspots)
 const HANOI_CENTER = [21.0285, 105.8542];
@@ -12,23 +14,44 @@ const SAMPLE_DATA = [
   { name: "Đường Phạm Hùng",   lat: 21.0140, lng: 105.7830, level: [48, 30, 62, 20] }
 ];
 
+=======
+const HANOI_CENTER = [21.0285, 105.8542];
+
+>>>>>>> dacfd7a (UI)
 // ===== LẤY CÁC PHẦN TỬ TRÊN TRANG =====
+=======
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const HANOI_CENTER = [21.0285, 105.8542];
+
+>>>>>>> dba387f (Changed UI/UX)
 const statusEl = document.getElementById("status-overlay");
 const statusTextEl = document.getElementById("status-text");
 const retryBtn = document.getElementById("retry-btn");
 const tileWarningEl = document.getElementById("tile-warning");
+<<<<<<< HEAD
 const timeSelect = document.getElementById("time-select");
 const summaryEl = document.getElementById("summary");
 const listEl = document.getElementById("list");
+=======
+const searchForm = document.getElementById("road-search");
+const roadQueryEl = document.getElementById("road-query");
+const searchButton = document.getElementById("search-btn");
+const searchStatusEl = document.getElementById("search-status");
+const searchResultsEl = document.getElementById("search-results");
+>>>>>>> dacfd7a (UI)
 const detailEl = document.getElementById("detail");
 
-// ===== TRẠNG THÁI CỦA TRANG =====
 let map = null;
 let pointsLayer = null;
+<<<<<<< HEAD
+<<<<<<< HEAD
 let hotspots = [];
 let timeSlot = 0;
 let selectedIndex = -1;
 let markers = [];
+=======
+let lastSearchAt = 0;
+>>>>>>> dacfd7a (UI)
 
 // ===== HIỂN THỊ TRẠNG THÁI TẢI / LỖI =====
 function showLoading(text) {
@@ -37,6 +60,9 @@ function showLoading(text) {
   statusTextEl.textContent = text;
   retryBtn.hidden = true;
 }
+=======
+let markersById = new Map();
+>>>>>>> dba387f (Changed UI/UX)
 
 function showError(text) {
   statusEl.hidden = false;
@@ -49,6 +75,8 @@ function hideStatus() {
   statusEl.hidden = true;
 }
 
+<<<<<<< HEAD
+<<<<<<< HEAD
 // ===== PHÂN LOẠI MỨC ĐỘ ÙN TẮC =====
 function getLevelInfo(level) {
   if (level >= 70) return { label: "Tắc nghẽn", cssClass: "red", color: "#d8402f" };
@@ -56,7 +84,18 @@ function getLevelInfo(level) {
   return { label: "Thông thoáng", cssClass: "green", color: "#1e9e6a" };
 }
 
+=======
+>>>>>>> dacfd7a (UI)
 // ===== KHỞI TẠO BẢN ĐỒ =====
+=======
+function speedColor(speed) {
+  if (speed > 30) return "#2e9d5b";
+  if (speed >= 15) return "#e6a700";
+  if (speed >= 5) return "#e04444";
+  return "#8d1725";
+}
+
+>>>>>>> dba387f (Changed UI/UX)
 function initMap() {
   map = L.map("map-canvas").setView(HANOI_CENTER, 12);
   pointsLayer = L.layerGroup().addTo(map);
@@ -66,13 +105,17 @@ function initMap() {
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
 
-  // Theo dõi việc tải ảnh nền: nếu không có ảnh nào tải được thì báo lỗi
-  let hasTileLoaded = false;
+  let tileLoadCount = 0;
   let tileErrorCount = 0;
 
-  baseLayer.on("tileload", () => {
-    hasTileLoaded = true;
+  baseLayer.on("loading", () => {
+    tileLoadCount = 0;
+    tileErrorCount = 0;
     tileWarningEl.hidden = true;
+  });
+
+  baseLayer.on("tileload", () => {
+    tileLoadCount++;
   });
 
   baseLayer.on("tileerror", () => {
@@ -80,12 +123,16 @@ function initMap() {
   });
 
   baseLayer.on("load", () => {
-    if (!hasTileLoaded && tileErrorCount > 0) {
+    if (tileErrorCount > 0) {
       tileWarningEl.hidden = false;
+      tileWarningEl.textContent = tileLoadCount > 0
+        ? "Một số ảnh nền OpenStreetMap không tải được. Hãy kiểm tra mạng, DNS, proxy hoặc firewall cho tile.openstreetmap.org."
+        : "Không tải được ảnh nền OpenStreetMap. Hãy kiểm tra mạng, DNS, proxy hoặc firewall cho tile.openstreetmap.org.";
     }
   });
 }
 
+<<<<<<< HEAD
 // ===== TẢI DỮ LIỆU =====
 async function fetchData() {
   if (USE_SAMPLE) {
@@ -237,15 +284,167 @@ function selectPoint(index, flyToPoint) {
 timeSelect.addEventListener("change", () => {
   timeSlot = Number(timeSelect.value);
   renderAll();
+=======
+function showSearchStatus(message, isError = false) {
+  searchStatusEl.textContent = message;
+  searchStatusEl.classList.toggle("error", isError);
+}
+
+function validateTrafficPoint(point) {
+  return point
+    && typeof point.id === "number"
+    && typeof point.name === "string"
+    && Number.isFinite(point.lat)
+    && point.lat >= -90
+    && point.lat <= 90
+    && Number.isFinite(point.lng)
+    && point.lng >= -180
+    && point.lng <= 180
+    && Number.isFinite(point.speed_kmh)
+    && point.speed_kmh >= 0;
+}
+
+async function fetchTrafficPoints(query = "") {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+
+  const queryString = params.toString();
+  const suffix = queryString ? `?${queryString}` : "";
+  const response = await fetch(`${BACKEND_URL}/api/map/traffic${suffix}`);
+  if (!response.ok) {
+    throw new Error(`Backend trả về mã lỗi ${response.status}.`);
+  }
+
+  const body = await response.json();
+  if (!body || !Array.isArray(body.data) || !body.data.every(validateTrafficPoint)) {
+    throw new Error("Dữ liệu giao thông từ Backend không đúng định dạng.");
+  }
+  return body.data;
+}
+
+function createPopup(point) {
+  const popup = document.createElement("div");
+  const popupTitle = document.createElement("strong");
+  popupTitle.textContent = point.name;
+  const popupSpeed = document.createElement("p");
+  popupSpeed.textContent = `Tốc độ mẫu: ${point.speed_kmh} km/h`;
+  popupSpeed.style.margin = "4px 0 0";
+  const popupNotice = document.createElement("small");
+  popupNotice.textContent = "Dữ liệu minh họa từ Backend";
+  popup.append(popupTitle, popupSpeed, popupNotice);
+  return popup;
+}
+
+function selectTrafficPoint(point) {
+  const marker = markersById.get(point.id);
+  if (!marker) return;
+
+  detailEl.hidden = false;
+  detailEl.textContent = "";
+  const title = document.createElement("h2");
+  title.textContent = point.name;
+  const speed = document.createElement("p");
+  speed.textContent = `Tốc độ: ${point.speed_kmh} km/h`;
+  const notice = document.createElement("p");
+  notice.textContent = "Đây là dữ liệu mẫu từ Backend, chưa phải số liệu giao thông thực tế.";
+  detailEl.append(title, speed, notice);
+
+  map.flyTo([point.lat, point.lng], 15, { duration: 0.8 });
+  marker.openPopup();
+}
+
+function renderTrafficPoints(points) {
+  pointsLayer.clearLayers();
+  markersById = new Map();
+  searchResultsEl.textContent = "";
+  detailEl.hidden = true;
+
+  for (const point of points) {
+    const marker = L.circleMarker([point.lat, point.lng], {
+      radius: 8,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: speedColor(point.speed_kmh),
+      fillOpacity: 0.9
+    }).addTo(pointsLayer);
+    marker.bindPopup(createPopup(point));
+    marker.bindTooltip(`${point.name} · ${point.speed_kmh} km/h`);
+    markersById.set(point.id, marker);
+
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "list-item";
+
+    const name = document.createElement("span");
+    name.className = "item-name";
+    const dot = document.createElement("span");
+    dot.className = "list-dot";
+    dot.style.backgroundColor = speedColor(point.speed_kmh);
+    const label = document.createElement("span");
+    label.textContent = point.name;
+    name.append(dot, label);
+
+    const speed = document.createElement("span");
+    speed.className = "item-value";
+    speed.textContent = `${point.speed_kmh} km/h`;
+    button.append(name, speed);
+    button.addEventListener("click", () => selectTrafficPoint(point));
+    li.append(button);
+    searchResultsEl.append(li);
+  }
+}
+
+async function loadTrafficPoints(query = "") {
+  searchButton.disabled = true;
+  showSearchStatus("Đang tải dữ liệu giao thông từ Backend…");
+
+  try {
+    const points = await fetchTrafficPoints(query);
+    renderTrafficPoints(points);
+    showSearchStatus(
+      points.length
+        ? `Có ${points.length} vị trí. Đây là dữ liệu mẫu từ Backend.`
+        : "Không tìm thấy đường phù hợp trong dữ liệu Backend."
+    );
+    hideStatus();
+  } catch (error) {
+    console.error("Lỗi khi tải dữ liệu giao thông:", error);
+    const message = error instanceof Error ? error.message : "Không thể tải dữ liệu từ Backend.";
+    showSearchStatus(`${message} Kiểm tra Backend tại ${BACKEND_URL}.`, true);
+    hideStatus();
+  } finally {
+    searchButton.disabled = false;
+  }
+<<<<<<< HEAD
+>>>>>>> dacfd7a (UI)
+=======
+}
+
+searchForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  loadTrafficPoints(roadQueryEl.value.trim());
+>>>>>>> dba387f (Changed UI/UX)
 });
 
-// ===== CHẠY TRANG =====
 if (typeof L === "undefined") {
-  // Thư viện Leaflet không tải được (mất mạng hoặc CDN bị chặn)
   showError("Không tải được thư viện bản đồ Leaflet. Hãy kiểm tra kết nối mạng rồi tải lại trang.");
   retryBtn.addEventListener("click", () => location.reload());
 } else {
+<<<<<<< HEAD
+<<<<<<< HEAD
   retryBtn.addEventListener("click", loadData);
   initMap();
   loadData();
+=======
+  retryBtn.addEventListener("click", () => location.reload());
+  initMap();
+  hideStatus();
+>>>>>>> dacfd7a (UI)
 }
+=======
+  retryBtn.addEventListener("click", () => loadTrafficPoints(roadQueryEl.value.trim()));
+  initMap();
+  loadTrafficPoints();
+}
+>>>>>>> dba387f (Changed UI/UX)
