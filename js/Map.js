@@ -16,11 +16,12 @@ document.addEventListener("DOMContentLoaded", () => {
     3: { key: "red",     color: "#ef4444", label: "Ùn tắc nghiêm trọng",  speed: 11 }, // 5-15 km/h
     4: { key: "darkred", color: "#991b1b", label: "Kẹt xe hoàn toàn",     speed: 4  }  // < 5 km/h
   };
+  const NO_DATA_COLOR = "#94a3b8";
 
   // ============================================================
   // 2. Cấu hình API - khi backend sẵn sàng chỉ cần đổi BASE_URL
   // ============================================================
-  const API_BASE_URL = "http://localhost:8080/api"; // TODO: đổi theo backend
+  const API_BASE_URL = "http://127.0.0.1:8000/api";
 
   /**
    * Lớp Client gọi API theo ERD.
@@ -47,6 +48,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  function parseSpeedKmh(value) {
+    const speed = typeof value === "number"
+      ? value
+      : Number.parseFloat(String(value ?? "").replace(",", "."));
+    return Number.isFinite(speed) && speed > 0 ? speed : null;
+  }
+
+  function trafficLevelFromSpeed(speedKmh) {
+    if (speedKmh === null) return null;
+    if (speedKmh > 30) return 1;
+    if (speedKmh >= 15) return 2;
+    if (speedKmh >= 5) return 3;
+    return 4;
+  }
+
   /**
    * Chuẩn hóa dữ liệu edge từ API về shape nội bộ của map.
    * Chấp nhận cả 2 dạng: edge lồng sẵn from/to, hoặc from_node_id/to_node_id
@@ -63,7 +79,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const from = e.from || nodesById[e.from_node_id] || e.from_node || {};
       const to = e.to || nodesById[e.to_node_id] || e.to_node || {};
       const rec = e.latest_traffic || e.traffic_record || {};
-      const level = Number(rec.congestion_level ?? e.congestion_level ?? 2);
+      const speed = rec.speed ?? rec.current_speed ?? rec.speed_kmh ?? rec.predicted_speed
+        ?? e.speed ?? e.current_speed ?? e.speed_kmh ?? e.predicted_speed ?? null;
+      const speedKmh = parseSpeedKmh(speed);
+      const declaredLevel = Number(rec.congestion_level ?? e.congestion_level);
+      const level = trafficLevelFromSpeed(speedKmh)
+        ?? (CONGESTION_LEVELS[declaredLevel] ? declaredLevel : null);
       return {
         edge_code: e.edge_code || e.id,
         street_name: e.street_name || e.name || "",
@@ -72,8 +93,8 @@ document.addEventListener("DOMContentLoaded", () => {
         from: { node_code: from.node_code, node_name: from.node_name, lat: from.lat, lng: from.lng },
         to: { node_code: to.node_code, node_name: to.node_name, lat: to.lat, lng: to.lng },
         congestion_level: level,
-        color_code: rec.color_code || CONGESTION_LEVELS[level]?.color,
-        speed: rec.speed || null
+        color_code: level ? CONGESTION_LEVELS[level].color : NO_DATA_COLOR,
+        speed
       };
     });
   }
@@ -254,8 +275,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const roadQueryInput = document.getElementById("road-query");
   const searchResultsUl = document.getElementById("search-results");
   const detailDiv = document.getElementById("detail");
+  const routeForm = document.getElementById("route-form");
+  const routeOriginInput = document.getElementById("route-origin");
+  const routeDestinationInput = document.getElementById("route-destination");
+  const routeVehicleSelect = document.getElementById("route-vehicle");
+  const routeSubmitButton = document.getElementById("route-submit");
+  const routeCancelButton = document.getElementById("route-cancel");
+  const routeStatus = document.getElementById("route-status");
+  const routeSummary = document.getElementById("route-summary");
+  const routeDistance = document.getElementById("route-distance");
+  const routeDuration = document.getElementById("route-duration");
 
   const map = L.map('map-canvas').setView([21.0180, 105.8150], 13);
+  map.createPane("routePane");
+  map.getPane("routePane").style.zIndex = "650";
+  map.createPane("routeMarkerPane");
+  map.getPane("routeMarkerPane").style.zIndex = "660";
 
   const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -266,6 +301,220 @@ document.addEventListener("DOMContentLoaded", () => {
   tileLayer.on('load', () => {
     if (statusOverlay) statusOverlay.style.display = 'none';
   });
+
+  let activeRoute = null;
+  let activeRouteEstimate = null;
+  let routeActive = false;
+  let routeRequestId = 0;
+  let lastGeocodeRequestAt = 0;
+  const geocodeCache = new Map();
+
+  function setRouteStatus(message, isError = false) {
+    if (!routeStatus) return;
+    routeStatus.textContent = message;
+    routeStatus.classList.toggle("error", isError);
+  }
+
+  async function fetchWithTimeout(url, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async function geocodeAddress(query) {
+    const cacheKey = query.trim().toLocaleLowerCase("vi");
+    if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
+
+    const delay = Math.max(0, 1000 - (Date.now() - lastGeocodeRequestAt));
+    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+
+    const params = new URLSearchParams({
+      format: "jsonv2",
+      limit: "1",
+      countrycodes: "vn",
+      bounded: "1",
+      viewbox: "105.3,21.5,106.1,20.5",
+      q: `${query}, Hà Nội, Việt Nam`
+    });
+    const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?${params}`);
+    lastGeocodeRequestAt = Date.now();
+    if (!response.ok) throw new Error(`Dịch vụ tìm địa điểm trả về HTTP ${response.status}.`);
+
+    const results = await response.json();
+    if (!results.length) throw new Error(`Không tìm thấy địa điểm "${query}" tại Hà Nội.`);
+
+    const location = {
+      lat: Number(results[0].lat),
+      lng: Number(results[0].lon)
+    };
+    geocodeCache.set(cacheKey, location);
+    return location;
+  }
+
+  function formatDuration(seconds) {
+    const totalMinutes = Math.max(1, Math.round(seconds / 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours ? `${hours} giờ ${minutes} phút` : `${minutes} phút`;
+  }
+
+  const VEHICLE_SPEED_PROFILES = {
+    car: { speedFactor: 1, maxSpeedKmh: 60, fallbackSpeedKmh: 30 },
+    motorcycle: { speedFactor: 1.1, maxSpeedKmh: 50, fallbackSpeedKmh: 33 },
+    bicycle: { speedFactor: 0.55, maxSpeedKmh: 18, fallbackSpeedKmh: 16 },
+    bus: { speedFactor: 0.85, maxSpeedKmh: 40, fallbackSpeedKmh: 26 }
+  };
+
+  function estimateRouteDuration(routeSegments, vehicleType) {
+    const profile = VEHICLE_SPEED_PROFILES[vehicleType] || VEHICLE_SPEED_PROFILES.car;
+    return routeSegments.reduce((totalSeconds, segment) => {
+      const currentSpeedKmh = segment.speedKmh || CONGESTION_LEVELS[segment.level]?.speed
+        || profile.fallbackSpeedKmh;
+      const speedKmh = Math.min(currentSpeedKmh * profile.speedFactor, profile.maxSpeedKmh);
+      return totalSeconds + segment.distanceMeters / (speedKmh * 1000 / 3600);
+    }, 0);
+  }
+
+  function updateRouteDuration() {
+    if (!activeRouteEstimate || !routeDuration) return;
+    const vehicleType = routeVehicleSelect?.value || "car";
+    routeDuration.textContent = formatDuration(
+      estimateRouteDuration(activeRouteEstimate.segments, vehicleType)
+    );
+  }
+
+  if (routeForm && routeOriginInput && routeDestinationInput && routeSubmitButton) {
+    routeForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      const originName = routeOriginInput.value.trim();
+      const destinationName = routeDestinationInput.value.trim();
+      if (!originName || !destinationName) return;
+
+      const requestId = ++routeRequestId;
+      if (routeCancelButton) routeCancelButton.hidden = false;
+      routeSubmitButton.disabled = true;
+      routeSubmitButton.textContent = "Đang tìm tuyến...";
+      setRouteStatus("Đang xác định hai địa điểm..." + (routeActive ? " Tuyến hiện tại vẫn được giữ đến khi tìm xong tuyến mới." : ""));
+
+      try {
+        const origin = await geocodeAddress(originName);
+        const destination = await geocodeAddress(destinationName);
+        if (requestId !== routeRequestId) return;
+        const coordinates = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
+        const routeUrl = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`;
+        const response = await fetchWithTimeout(routeUrl);
+        if (!response.ok) throw new Error(`Dịch vụ tìm đường trả về HTTP ${response.status}.`);
+
+        const result = await response.json();
+        const route = result.code === "Ok" ? result.routes?.[0] : null;
+        if (
+          !route ||
+          !Array.isArray(route.geometry?.coordinates) ||
+          route.geometry.coordinates.length < 2 ||
+          !Number.isFinite(route.distance) ||
+          !Number.isFinite(route.duration)
+        ) {
+          throw new Error("Không tìm được tuyến đường ô tô giữa hai địa điểm.");
+        }
+        if (requestId !== routeRequestId) return;
+
+        const routePoints = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        const trafficSegments = buildTrafficColoredRoute(routePoints, route.distance);
+        const routeLines = L.featureGroup(
+          trafficSegments.map(segment => createRouteSegment(segment.points, segment.level))
+        );
+        const startMarker = L.circleMarker([origin.lat, origin.lng], {
+          pane: "routeMarkerPane",
+          radius: 8,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#16a34a",
+          fillOpacity: 1
+        });
+        const endMarker = L.circleMarker([destination.lat, destination.lng], {
+          pane: "routeMarkerPane",
+          radius: 8,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#dc2626",
+          fillOpacity: 1
+        });
+        const nextRoute = L.featureGroup([routeLines, startMarker, endMarker]).addTo(map);
+        if (activeRoute) map.removeLayer(activeRoute);
+        activeRoute = nextRoute;
+        activeRouteEstimate = { segments: trafficSegments };
+        routeActive = true;
+        setBaseRoadsDimmed(true);
+        if (routeCancelButton) routeCancelButton.hidden = false;
+
+        map.fitBounds(routeLines.getBounds(), { padding: [48, 48], maxZoom: 16 });
+        if (routeDistance) routeDistance.textContent = `${fmt(route.distance / 1000, 2)} km`;
+        updateRouteDuration();
+        if (routeSummary) routeSummary.hidden = false;
+        if (detailDiv) detailDiv.hidden = true;
+        setRouteStatus(`${originName} → ${destinationName}`);
+      } catch (error) {
+        if (requestId !== routeRequestId) return;
+        const message = error instanceof Error && error.name === "AbortError"
+          ? "Dịch vụ tìm địa điểm hoặc tuyến đường hết thời gian chờ. Vui lòng thử lại."
+          : error instanceof Error
+            ? error.message
+            : "Không thể tìm tuyến đường.";
+        setRouteStatus(message, true);
+        if (!routeActive && routeCancelButton) routeCancelButton.hidden = true;
+      } finally {
+        if (requestId === routeRequestId) {
+          routeSubmitButton.disabled = false;
+          routeSubmitButton.textContent = "Vẽ tuyến đường";
+        }
+      }
+    });
+
+    document.getElementById("route-swap")?.addEventListener("click", () => {
+      const origin = routeOriginInput.value;
+      routeOriginInput.value = routeDestinationInput.value;
+      routeDestinationInput.value = origin;
+      routeOriginInput.focus();
+    });
+
+    routeVehicleSelect?.addEventListener("change", updateRouteDuration);
+
+    routeCancelButton?.addEventListener("click", () => {
+      routeRequestId += 1;
+      if (activeRoute) {
+        map.removeLayer(activeRoute);
+        activeRoute = null;
+      }
+      activeRouteEstimate = null;
+      routeActive = false;
+      setBaseRoadsDimmed(false);
+      routeSubmitButton.disabled = false;
+      routeSubmitButton.textContent = "Vẽ tuyến đường";
+      if (routeCancelButton) routeCancelButton.hidden = true;
+      if (routeSummary) routeSummary.hidden = true;
+      if (detailDiv) detailDiv.hidden = true;
+      setRouteStatus("Đã hủy tuyến. Bản đồ đã trở lại chế độ xem bình thường.");
+    });
+  }
+
+  function createRouteSegment(points, trafficLevel) {
+    const color = trafficLevel && CONGESTION_LEVELS[trafficLevel]
+      ? CONGESTION_LEVELS[trafficLevel].color
+      : "#64748b";
+    return L.polyline(points, {
+      pane: "routePane",
+      color,
+      weight: 8,
+      opacity: 1,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false
+    });
+  }
 
   // ============================================================
   // 5. Nhóm edge theo corridor (giống "tuyến" trên UI)
@@ -299,6 +548,164 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
   const mapPolylines = []; // { corridor, segmentLayers, distances, totalKm, avgSpeed, maxSpeedLimit }
 
+  function setBaseRoadsDimmed(dimmed) {
+    mapPolylines.forEach(entry => {
+      entry.segmentLayers.forEach(layer => {
+        layer.setStyle({
+          weight: dimmed ? 4 : 7,
+          opacity: dimmed ? 0.12 : 0.88
+        });
+      });
+    });
+  }
+
+  function findNearbyTraffic(point) {
+    let nearest = null;
+
+    mapPolylines.forEach(entry => {
+      entry.corridor.edges.forEach((edge, index) => {
+        const speedKmh = parseSpeedKmh(edge.speed);
+        const level = trafficLevelFromSpeed(speedKmh) ?? Number(edge.congestion_level);
+        const roadPoints = entry.segmentLayers[index].getLatLngs();
+        if (!CONGESTION_LEVELS[level] || roadPoints.length < 2) return;
+
+        for (let pointIndex = 1; pointIndex < roadPoints.length; pointIndex++) {
+          const distance = distToSegment(
+            point,
+            [roadPoints[pointIndex - 1].lat, roadPoints[pointIndex - 1].lng],
+            [roadPoints[pointIndex].lat, roadPoints[pointIndex].lng]
+          );
+          if (!nearest || distance < nearest.distance) {
+            nearest = {
+              distance,
+              level,
+              speedKmh
+            };
+          }
+        }
+      });
+    });
+
+    return nearest && nearest.distance <= 150 && CONGESTION_LEVELS[nearest.level]
+      ? nearest
+      : { level: null, speedKmh: null };
+  }
+
+  function buildTrafficColoredRoute(points, routeDistanceMeters) {
+    const sampleLengthMeters = 60;
+    const segments = [];
+    let geometryDistanceMeters = 0;
+
+    for (let index = 1; index < points.length; index++) {
+      const start = points[index - 1];
+      const end = points[index];
+      const legDistanceMeters = haversine(start, end);
+      const sampleCount = Math.max(1, Math.ceil(legDistanceMeters / sampleLengthMeters));
+      const sampleDistanceMeters = legDistanceMeters / sampleCount;
+
+      for (let sample = 0; sample < sampleCount; sample++) {
+        const startRatio = sample / sampleCount;
+        const endRatio = (sample + 1) / sampleCount;
+        const sampleStart = [
+          start[0] + (end[0] - start[0]) * startRatio,
+          start[1] + (end[1] - start[1]) * startRatio
+        ];
+        const sampleEnd = [
+          start[0] + (end[0] - start[0]) * endRatio,
+          start[1] + (end[1] - start[1]) * endRatio
+        ];
+        const midpoint = [
+          (sampleStart[0] + sampleEnd[0]) / 2,
+          (sampleStart[1] + sampleEnd[1]) / 2
+        ];
+        const traffic = findNearbyTraffic(midpoint);
+        const currentSegment = segments[segments.length - 1];
+
+        if (currentSegment && currentSegment.level === traffic.level) {
+          currentSegment.points.push(sampleEnd);
+          currentSegment.distanceMeters += sampleDistanceMeters;
+          if (traffic.speedKmh) {
+            const previousDistance = currentSegment.speedDistanceMeters || 0;
+            currentSegment.speedKmh = (
+              (currentSegment.speedKmh || 0) * previousDistance +
+              traffic.speedKmh * sampleDistanceMeters
+            ) / (previousDistance + sampleDistanceMeters);
+            currentSegment.speedDistanceMeters = previousDistance + sampleDistanceMeters;
+          }
+        } else {
+          segments.push({
+            level: traffic.level,
+            speedKmh: traffic.speedKmh,
+            speedDistanceMeters: traffic.speedKmh ? sampleDistanceMeters : 0,
+            points: [sampleStart, sampleEnd],
+            distanceMeters: sampleDistanceMeters
+          });
+        }
+        geometryDistanceMeters += sampleDistanceMeters;
+      }
+    }
+
+    if (geometryDistanceMeters > 0 && Number.isFinite(routeDistanceMeters)) {
+      const distanceScale = routeDistanceMeters / geometryDistanceMeters;
+      segments.forEach(segment => {
+        segment.distanceMeters *= distanceScale;
+      });
+    }
+    return mergeShortTrafficSegments(segments, 120);
+  }
+
+  function mergeShortTrafficSegments(segments, minLengthMeters) {
+    const merged = segments.map(segment => ({ ...segment, points: [...segment.points] }));
+    let index = 0;
+    while (index < merged.length - 1) {
+      const source = merged[index];
+      if (source.distanceMeters >= minLengthMeters) {
+        index += 1;
+        continue;
+      }
+
+      const mergeIntoPrevious = index > 0;
+      const targetIndex = mergeIntoPrevious ? index - 1 : index + 1;
+      const target = merged[targetIndex];
+      const totalDistance = target.distanceMeters + source.distanceMeters;
+      if (target.speedKmh && source.speedKmh) {
+        target.speedKmh = (
+          target.speedKmh * target.distanceMeters +
+          source.speedKmh * source.distanceMeters
+        ) / totalDistance;
+      } else {
+        target.speedKmh = target.speedKmh || source.speedKmh;
+      }
+      target.points = mergeIntoPrevious
+        ? [...target.points, ...source.points.slice(1)]
+        : [...source.points.slice(0, -1), ...target.points];
+      target.distanceMeters = totalDistance;
+      merged.splice(index, 1);
+      if (mergeIntoPrevious) index = Math.max(0, index - 1);
+    }
+
+    return merged.reduce((result, segment) => {
+      const previous = result[result.length - 1];
+      if (!previous || previous.level !== segment.level) {
+        result.push(segment);
+        return result;
+      }
+
+      const totalDistance = previous.distanceMeters + segment.distanceMeters;
+      if (previous.speedKmh && segment.speedKmh) {
+        previous.speedKmh = (
+          previous.speedKmh * previous.distanceMeters +
+          segment.speedKmh * segment.distanceMeters
+        ) / totalDistance;
+      } else {
+        previous.speedKmh = previous.speedKmh || segment.speedKmh;
+      }
+      previous.points.push(...segment.points.slice(1));
+      previous.distanceMeters = totalDistance;
+      return result;
+    }, []);
+  }
+
   function haversine(a, b) {
     const R = 6371000;
     const rad = Math.PI / 180;
@@ -313,19 +720,19 @@ document.addEventListener("DOMContentLoaded", () => {
   function distToSegment(p, a, b) {
     const R = 6371000;
     const rad = Math.PI / 180;
-    const ax = a[1] * rad, ay = a[0] * rad;
-    const bx = b[1] * rad, by = b[0] * rad;
-    const px = p[1] * rad, py = p[0] * rad;
+    const metersPerDegree = R * rad;
+    const cosLat = Math.cos(((a[0] + b[0] + p[0]) / 3) * rad);
+    const ax = a[1] * metersPerDegree * cosLat;
+    const ay = a[0] * metersPerDegree;
+    const bx = b[1] * metersPerDegree * cosLat;
+    const by = b[0] * metersPerDegree;
+    const px = p[1] * metersPerDegree * cosLat;
+    const py = p[0] * metersPerDegree;
     const dx = bx - ax, dy = by - ay;
     if (dx === 0 && dy === 0) return haversine(p, a);
-    const cosLat = Math.cos((a[0] + b[0]) / 2 * rad);
-    const t = Math.max(0, Math.min(1, ((px - ax) * dx * cosLat + (py - ay) * dy) /
-      (dx * dx * cosLat * cosLat + dy * dy)));
-    const projX = ax + t * dx, projY = ay + t * dy;
-    const midLat = (projY + p[0]) / 2;
-    const dLat = (projY - p[0]) * Math.PI * R / 180;
-    const dLng = (projX - p[1]) * Math.PI * R * Math.cos(midLat * rad) / 180;
-    return Math.sqrt(dLat * dLat + dLng * dLng);
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) /
+      (dx * dx + dy * dy)));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
   }
 
   /** Tổng chiều dài polyline (mét) */
@@ -343,7 +750,7 @@ document.addEventListener("DOMContentLoaded", () => {
    */
   async function snapEdgeGeometry(from, to) {
     const coordStr = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=true`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=false`;
     try {
       const res = await fetch(url);
       if (!res.ok) return null;
@@ -351,45 +758,16 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.code !== 'Ok' || !data.routes || !data.routes.length) return null;
 
       const route = data.routes[0];
-      const leg = route.legs[0];
-      const pts = [];
-      leg.steps.forEach(step => {
-        step.geometry.coordinates.forEach(c => {
-          const latlng = [c[1], c[0]];
-          const last = pts[pts.length - 1];
-          if (!last || last[0] !== latlng[0] || last[1] !== latlng[1]) {
-            pts.push(latlng);
-          }
-        });
-      });
-      return { pts, distance: leg.distance };
+      const coordinates = route.geometry?.coordinates;
+      if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+      return {
+        pts: coordinates.map(([lng, lat]) => [lat, lng]),
+        distance: route.distance
+      };
     } catch (err) {
       console.warn('OSRM snap thất bại:', err);
       return null;
     }
-  }
-
-  /**
-   * Lọc bỏ nhánh ngõ / dò dòng trong geometry của 1 edge.
-   * Corridor = đoạn thẳng from -> to của edge (vì 1 edge là 1 cung ngắn).
-   */
-  function filterEdgeCorridor(pts, from, to, maxDist = 60) {
-    const dists = pts.map(p => distToSegment(p, [from.lat, from.lng], [to.lat, to.lng]));
-    let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
-    for (let j = 0; j < pts.length; j++) {
-      if (dists[j] <= maxDist) {
-        if (curStart === -1) curStart = j;
-        curLen++;
-        if (curLen > bestLen) { bestLen = curLen; bestStart = curStart; }
-      } else {
-        curStart = -1; curLen = 0;
-      }
-    }
-    if (bestLen >= 2) {
-      const trimmed = pts.slice(bestStart, bestStart + bestLen);
-      return { pts: trimmed, distance: polylineLength(trimmed) };
-    }
-    return { pts, distance: polylineLength(pts) };
   }
 
   /**
@@ -403,7 +781,9 @@ document.addEventListener("DOMContentLoaded", () => {
     corridor.edges.forEach((e, i) => {
       const d = distances ? distances[i] : haversine(
         [e.from.lat, e.from.lng], [e.to.lat, e.to.lng]);
-      const speedNum = e.speed ? parseFloat(e.speed) : CONGESTION_LEVELS[e.congestion_level].speed;
+      const speedNum = parseSpeedKmh(e.speed)
+        ?? CONGESTION_LEVELS[e.congestion_level]?.speed
+        ?? 30;
       totalTime += d / speedNum;
       totalDist += d;
     });
@@ -435,17 +815,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Vẽ ngay bản dự phòng từng edge (nối from -> to)
     corridor.edges.forEach(e => {
-      const style = CONGESTION_LEVELS[e.congestion_level] || { color: "#94a3b8" };
+      const style = CONGESTION_LEVELS[e.congestion_level] || { color: NO_DATA_COLOR };
       const segLine = L.polyline(
         [[e.from.lat, e.from.lng], [e.to.lat, e.to.lng]],
-        { ...LINE_STYLE, color: style.color }
+        {
+          ...LINE_STYLE,
+          color: style.color,
+          weight: routeActive ? 4 : LINE_STYLE.weight,
+          opacity: routeActive ? 0.12 : LINE_STYLE.opacity
+        }
       ).addTo(map);
       entry.segmentLayers.push(segLine);
     });
 
     bindCorridorEvents(entry);
 
-    // Snap geometry từng edge về lòng đường thật + lọc nhánh ngõ
+    // Giữ nguyên geometry OSRM đầy đủ để các edge không bị cắt rời thành chấm.
     const distances = [];
     const snappedList = await Promise.all(corridor.edges.map(e =>
       snapEdgeGeometry(e.from, e.to)
@@ -454,9 +839,8 @@ document.addEventListener("DOMContentLoaded", () => {
     snappedList.forEach((snapped, i) => {
       const e = corridor.edges[i];
       if (snapped && snapped.pts.length > 1) {
-        const cleaned = filterEdgeCorridor(snapped.pts, e.from, e.to);
-        entry.segmentLayers[i].setLatLngs(cleaned.pts);
-        distances.push(cleaned.distance);
+        entry.segmentLayers[i].setLatLngs(snapped.pts);
+        distances.push(snapped.distance || polylineLength(snapped.pts));
       } else {
         distances.push(haversine([e.from.lat, e.from.lng], [e.to.lat, e.to.lng]));
       }
@@ -474,10 +858,15 @@ document.addEventListener("DOMContentLoaded", () => {
     group.on('click', () => showCorridorDetail(entry));
 
     group.on('mouseover', () => {
-      entry.segmentLayers.forEach(l => l.setStyle({ weight: 11, opacity: 1.0 }));
+      if (!routeActive) {
+        entry.segmentLayers.forEach(l => l.setStyle({ weight: 11, opacity: 1.0 }));
+      }
     });
     group.on('mouseout', () => {
-      entry.segmentLayers.forEach(l => l.setStyle({ weight: 7, opacity: 0.88 }));
+      entry.segmentLayers.forEach(l => l.setStyle({
+        weight: routeActive ? 4 : 7,
+        opacity: routeActive ? 0.12 : 0.88
+      }));
     });
   }
 
@@ -495,10 +884,12 @@ document.addEventListener("DOMContentLoaded", () => {
         [e.from.lat, e.from.lng], [e.to.lat, e.to.lng]);
       const speedTxt = e.speed
         ? `${e.speed}`
-        : `~${lvl.speed} km/h`;
+        : lvl
+          ? `~${lvl.speed} km/h`
+          : "Không có dữ liệu";
       return `
         <li style="display:flex; align-items:center; gap:8px; padding:4px 0;">
-          <span style="width:14px; height:14px; border-radius:50%; background:${e.color_code || lvl.color}; flex-shrink:0;"></span>
+          <span style="width:14px; height:14px; border-radius:50%; background:${e.color_code || lvl?.color || NO_DATA_COLOR}; flex-shrink:0;"></span>
           <span style="flex:1;">
             ${e.street_name}
             <small style="color:#64748b;">(${e.from.node_name} → ${e.to.node_name})</small>
