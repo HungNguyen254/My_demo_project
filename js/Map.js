@@ -529,6 +529,14 @@ document.addEventListener("DOMContentLoaded", () => {
     for (const corridor of corridors) {
       await drawCorridor(corridor);
     }
+
+    // Hỗ trợ deep-link từ main.html: Map.html?q=<tên trục>
+    // -> tự điền ô search, đi search và focus vào tuyến luôn
+    const qParam = new URLSearchParams(window.location.search).get("q");
+    if (qParam && roadSearchForm && roadQueryInput) {
+      roadQueryInput.value = qParam;
+      roadSearchForm.requestSubmit();
+    }
   })();
 
   // ============================================================
