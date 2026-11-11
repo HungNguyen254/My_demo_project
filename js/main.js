@@ -1,6 +1,6 @@
 // File: TRAFFIC_SYSTEM_FE/js/main.js
 
-const API_BASE_URL = "http://localhost:8080/api";
+const API_BASE_URL = "http://127.0.0.1:8000/api";
 
 const CONGESTION_MAP = {
   1: { key: "green",   colorClass: "green",   textClass: "text-green",   label: "Thông thoáng",        speedDefault: 45 },
@@ -32,8 +32,13 @@ function initBackendConnection() {
       const res = await fetch(`${API_BASE_URL}/health`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      const databaseStatus = data.data?.database;
+      if (databaseStatus !== "connected") {
+        throw new Error(`Backend phản hồi nhưng database không kết nối được: ${databaseStatus || "không rõ trạng thái"}`);
+      }
+
       output.style.color = "#16a34a";
-      output.textContent = `✅ ${data.message || "Kết nối Backend thành công!"} (${data.timestamp || new Date().toLocaleTimeString()})`;
+      output.textContent = `✅ Backend và database đã kết nối. Nút này chỉ kiểm tra kết nối, không tải dữ liệu giao thông. (${data.timestamp || new Date().toLocaleTimeString()})`;
     } catch (err) {
       output.style.color = "#dc2626";
       output.textContent = `❌ Không thể kết nối Backend (${err.message}). Đang dùng dữ liệu offline.`;
