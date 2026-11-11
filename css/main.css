@@ -6,10 +6,11 @@
   --text-muted: #55657a;
   --border: #cbd5e1;
   --primary: #1f5fbf;
-  --green: #28a745;
-  --yellow: #ffc107;
-  --red: #dc3545;
-  --dark-red: #721c24;
+  /* Khớp 100% với TRAFFIC_COLORS trong js/Map.js */
+  --green: #22c55e;
+  --yellow: #eab308;
+  --red: #ef4444;
+  --dark-red: #991b1b;
 }
 
 /* ===== THIẾT LẬP CHUNG ===== */
@@ -253,12 +254,14 @@ a {
 .route {
   width: fit-content;
   cursor: pointer;
+  text-decoration: none; /* giờ là <a> dẫn sang Map.html?q=... */
+  color: inherit;
 }
 
-.route:focus-visible {
-  outline: 3px solid var(--primary);
-  outline-offset: 3px;
-  border-radius: 2px;
+.route:hover strong,
+.route:focus-visible strong {
+  color: var(--primary);
+  text-decoration: underline;
 }
 
 /* Mỗi tuyến có 4 ô dữ liệu, mặc định ẩn hết */
@@ -312,6 +315,10 @@ a {
 .level.green .bar { background: var(--green); }
 .level.yellow .bar { background: var(--yellow); }
 .level.red .bar   { background: var(--red); }
+.level.darkred .bar { background: var(--dark-red); }
+
+.level.darkred span { color: var(--dark-red); }
+.level.red span { color: #b91c1c; }
 
 /* ===== GỢI Ý CỦA AI ===== */
 .tips > div {
@@ -387,8 +394,9 @@ a {
 }
 
 .text-red   { color: var(--red) !important; }
-.text-yellow { color: #a8730a !important; }
-.text-green { color: var(--green) !important; }
+.text-darkred { color: var(--dark-red) !important; }
+.text-yellow { color: #a16207 !important; }
+.text-green { color: #15803d !important; }
 
 /* ===== CÁC BƯỚC HOẠT ĐỘNG ===== */
 .steps {
