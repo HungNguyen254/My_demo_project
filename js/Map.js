@@ -567,6 +567,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         searchResultsUl.appendChild(li);
       });
+
+      // Chỉ có 1 kết quả -> chọn ngay luôn, khỏi cần click thêm lần nữa.
+      // Nhiều kết quả -> chọn cái đầu tiên (khớp nhất) nhưng vẫn giữ danh sách
+      // để user có thể đổi sang kết quả khác.
+      const bounds = L.featureGroup(matched[0].segmentLayers).getBounds();
+      map.fitBounds(bounds, { padding: [40, 40] });
+      showCorridorDetail(matched[0]);
     });
   }
 });
