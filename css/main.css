@@ -6,16 +6,10 @@
   --text-muted: #55657a;
   --border: #cbd5e1;
   --primary: #1f5fbf;
-<<<<<<< HEAD
-  --green: #1e9e6a;
-  --yellow: #e7a416;
-  --red: #d8402f;
-=======
   --green: #28a745;
   --yellow: #ffc107;
   --red: #dc3545;
   --dark-red: #721c24;
->>>>>>> dacfd7a (UI)
 }
 
 /* ===== THIẾT LẬP CHUNG ===== */
@@ -219,10 +213,7 @@ a {
 .legend-dot.green { background: var(--green); }
 .legend-dot.yellow { background: var(--yellow); }
 .legend-dot.red   { background: var(--red); }
-<<<<<<< HEAD
-=======
 .legend-dot.darkred { background: var(--dark-red); }
->>>>>>> dacfd7a (UI)
 
 .forecast-table {
   background: var(--surface);
@@ -233,13 +224,6 @@ a {
 
 .row {
   display: grid;
-<<<<<<< HEAD
-  grid-template-columns: 1fr 1.4fr;
-  gap: 16px;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-=======
   grid-template-columns: 1fr;
   gap: 8px;
   align-items: start;
@@ -252,7 +236,6 @@ a {
 .row:hover,
 .row:focus-within {
   background-color: #f7f9fc;
->>>>>>> dacfd7a (UI)
 }
 
 .row:last-child {
@@ -264,9 +247,6 @@ a {
 }
 
 .route small {
-<<<<<<< HEAD
-  color: var(--text-muted);
-=======
   display: none;
 }
 
@@ -279,7 +259,6 @@ a {
   outline: 3px solid var(--primary);
   outline-offset: 3px;
   border-radius: 2px;
->>>>>>> dacfd7a (UI)
 }
 
 /* Mỗi tuyến có 4 ô dữ liệu, mặc định ẩn hết */
@@ -287,14 +266,6 @@ a {
   display: none;
 }
 
-<<<<<<< HEAD
-/* Chỉ hiện ô tương ứng với khung giờ đang chọn */
-#time-1:checked ~ .forecast-table .slot-1,
-#time-2:checked ~ .forecast-table .slot-2,
-#time-3:checked ~ .forecast-table .slot-3,
-#time-4:checked ~ .forecast-table .slot-4 {
-  display: block;
-=======
 /* Chỉ hiện chỉ số của khung giờ đã chọn khi hover hoặc focus trong hàng tuyến */
 #time-1:checked ~ .forecast-table .row:hover .slot-1,
 #time-1:checked ~ .forecast-table .row:focus-within .slot-1,
@@ -317,7 +288,6 @@ a {
     opacity: 1;
     transform: translateY(0);
   }
->>>>>>> dacfd7a (UI)
 }
 
 .bar-track {
@@ -388,8 +358,6 @@ a {
   font-size: 14px;
 }
 
-<<<<<<< HEAD
-=======
 .hotspot-card {
   cursor: pointer;
 }
@@ -418,7 +386,6 @@ a {
   outline-offset: 3px;
 }
 
->>>>>>> dacfd7a (UI)
 .text-red   { color: var(--red) !important; }
 .text-yellow { color: #a8730a !important; }
 .text-green { color: var(--green) !important; }
@@ -523,11 +490,7 @@ button.btn:focus-visible {
 /* Tôn trọng người dùng muốn giảm chuyển động */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-<<<<<<< HEAD
-  .bar { transition: none; }
-=======
   .bar,
   .row,
   .level { transition: none; animation: none; }
->>>>>>> dacfd7a (UI)
 }
