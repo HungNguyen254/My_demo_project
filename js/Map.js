@@ -11,17 +11,30 @@ document.addEventListener("DOMContentLoaded", () => {
   //    Khớp TrafficRecords.congestion_level + color_code trong ERD
   // ============================================================
   const CONGESTION_LEVELS = {
-    1: { key: "green",   color: "#22c55e", label: "Thông thoáng",         speed: 45 }, // > 30 km/h
-    2: { key: "yellow",  color: "#eab308", label: "Di chuyển chậm",       speed: 22 }, // 15-30 km/h
-    3: { key: "red",     color: "#ef4444", label: "Ùn tắc nghiêm trọng",  speed: 11 }, // 5-15 km/h
-    4: { key: "darkred", color: "#991b1b", label: "Kẹt xe hoàn toàn",     speed: 4  }  // < 5 km/h
+    1: { key: "green", color: "#22c55e", label: "Thông thoáng", speed: 45 }, // > 30 km/h
+    2: { key: "yellow", color: "#eab308", label: "Di chuyển chậm", speed: 22 }, // 15-30 km/h
+    3: {
+      key: "red",
+      color: "#ef4444",
+      label: "Ùn tắc nghiêm trọng",
+      speed: 11,
+    }, // 5-15 km/h
+    4: {
+      key: "darkred",
+      color: "#991b1b",
+      label: "Kẹt xe hoàn toàn",
+      speed: 4,
+    }, // < 5 km/h
   };
   const NO_DATA_COLOR = "#94a3b8";
 
   // ============================================================
   // 2. Cấu hình API - khi backend sẵn sàng chỉ cần đổi BASE_URL
   // ============================================================
-  const API_BASE_URL = "http://127.0.0.1:8000/api";
+  const ENV = import.meta.env;
+  const API_BASE_URL = ENV.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+  const ROUTING_BASE_URL =
+    ENV.VITE_ROUTING_URL || "https://router.project-osrm.org/route/v1/driving";
 
   /**
    * Lớp Client gọi API theo ERD.
@@ -39,27 +52,34 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const res = await fetch(`${API_BASE_URL}/edges`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const envelope = await res.json();
+        // Backend trả envelope chuẩn {status_code, message, data} -> bóc data
+        const data = envelope?.data ?? envelope;
         return normalizeEdges(data);
       } catch (err) {
-        console.warn("API /edges không khả dụng, dùng dữ liệu mock:", err.message);
+        console.warn(
+          "API /edges không khả dụng, dùng dữ liệu mock:",
+          err.message,
+        );
         return normalizeEdges(MOCK_EDGES);
       }
-    }
+    },
   };
 
   function parseSpeedKmh(value) {
-    const speed = typeof value === "number"
-      ? value
-      : Number.parseFloat(String(value ?? "").replace(",", "."));
+    const speed =
+      typeof value === "number"
+        ? value
+        : Number.parseFloat(String(value ?? "").replace(",", "."));
     return Number.isFinite(speed) && speed > 0 ? speed : null;
   }
 
+  // Ngưỡng khớp 100% với dataset CSV (_speed_to_congestion_level bên BE)
   function trafficLevelFromSpeed(speedKmh) {
     if (speedKmh === null) return null;
-    if (speedKmh > 30) return 1;
-    if (speedKmh >= 15) return 2;
-    if (speedKmh >= 5) return 3;
+    if (speedKmh >= 35) return 1;
+    if (speedKmh >= 25) return 2;
+    if (speedKmh >= 15) return 3;
     return 4;
   }
 
@@ -71,30 +91,52 @@ document.addEventListener("DOMContentLoaded", () => {
   function normalizeEdges(raw) {
     const nodesById = {};
     if (Array.isArray(raw.nodes)) {
-      raw.nodes.forEach(n => { nodesById[n.id ?? n.node_code] = n; });
+      raw.nodes.forEach((n) => {
+        nodesById[n.id ?? n.node_code] = n;
+      });
     }
     const list = Array.isArray(raw.edges) ? raw.edges : raw;
 
-    return list.map(e => {
+    return list.map((e) => {
       const from = e.from || nodesById[e.from_node_id] || e.from_node || {};
       const to = e.to || nodesById[e.to_node_id] || e.to_node || {};
       const rec = e.latest_traffic || e.traffic_record || {};
-      const speed = rec.speed ?? rec.current_speed ?? rec.speed_kmh ?? rec.predicted_speed
-        ?? e.speed ?? e.current_speed ?? e.speed_kmh ?? e.predicted_speed ?? null;
+      const speed =
+        rec.speed ??
+        rec.current_speed ??
+        rec.speed_kmh ??
+        rec.predicted_speed ??
+        e.speed ??
+        e.current_speed ??
+        e.speed_kmh ??
+        e.predicted_speed ??
+        null;
       const speedKmh = parseSpeedKmh(speed);
       const declaredLevel = Number(rec.congestion_level ?? e.congestion_level);
-      const level = trafficLevelFromSpeed(speedKmh)
-        ?? (CONGESTION_LEVELS[declaredLevel] ? declaredLevel : null);
+      // Ưu tiên congestion_level do BE tính từ CSV; tốc độ chỉ dùng khi thiếu level
+      const level = CONGESTION_LEVELS[declaredLevel]
+        ? declaredLevel
+        : trafficLevelFromSpeed(speedKmh);
       return {
         edge_code: e.edge_code || e.id,
         street_name: e.street_name || e.name || "",
         corridor_name: e.corridor_name || e.street_name || e.name || "",
         max_speed_limit: e.max_speed_limit || null,
-        from: { node_code: from.node_code, node_name: from.node_name, lat: from.lat, lng: from.lng },
-        to: { node_code: to.node_code, node_name: to.node_name, lat: to.lat, lng: to.lng },
+        from: {
+          node_code: from.node_code,
+          node_name: from.node_name,
+          lat: from.lat,
+          lng: from.lng,
+        },
+        to: {
+          node_code: to.node_code,
+          node_name: to.node_name,
+          lat: to.lat,
+          lng: to.lng,
+        },
         congestion_level: level,
         color_code: level ? CONGESTION_LEVELS[level].color : NO_DATA_COLOR,
-        speed
+        speed,
       };
     });
   }
@@ -111,73 +153,82 @@ document.addEventListener("DOMContentLoaded", () => {
   // Các Node theo ERD (nút giao trọng điểm Hà Nội)
   const MOCK_NODES = [
     node("N01", "Nút giao Khuất Duy Tiến - Nguyễn Trãi", 20.9942, 105.8075),
-    node("N02", "Nguyễn Trãi (Vũ Trọng Phụng)",           20.9961, 105.8101),
-    node("N03", "Nguyễn Trãi (Thượng Đình)",              20.9978, 105.8124),
-    node("N04", "Nút giao Ngã Tư Sở",                     20.9997, 105.8148),
-    node("N05", "Tây Sơn (ĐH Thủy Lợi)",                  21.0028, 105.8183),
-    node("N06", "Tây Sơn (Chùa Bộc)",                     21.0062, 105.8217),
-    node("N07", "Tây Sơn (Ngã tư Thái Hà)",               21.0090, 105.8235),
-    node("N08", "Ngã sáu Ô Chợ Dừa",                      21.0135, 105.8270),
-    node("N09", "Tôn Đức Thắng",                          21.0180, 105.8300),
-    node("N10", "Nút giao Cầu Giấy - Láng",               21.0330, 105.8010),
-    node("N11", "Láng (Chùa Láng)",                       21.0285, 105.8032),
-    node("N12", "Láng (Nguyễn Chí Thanh)",                21.0220, 105.8055),
-    node("N13", "Láng (Lê Văn Lương)",                    21.0175, 105.8080),
-    node("N14", "Láng (Yên Lãng)",                        21.0095, 105.8115),
-    node("N15", "Bến xe Mỹ Đình",                         21.0282, 105.7818),
-    node("N16", "Phạm Hùng (Mễ Trì)",                     21.0230, 105.7840),
-    node("N17", "Keangnam / Landmark 72",                 21.0165, 105.7878),
-    node("N18", "Nút giao Trần Duy Hưng",                 21.0085, 105.7945),
-    node("N19", "Khuất Duy Tiến (Lê Văn Lương)",          21.0015, 105.8010),
-    node("N20", "Nguyễn Xiển (ĐH Thăng Long)",            20.9880, 105.8130),
-    node("N21", "Nút giao Linh Đàm",                      20.9800, 105.8205),
-    node("N22", "Trường Chinh (Tôn Thất Tùng)",           21.0012, 105.8210),
-    node("N23", "Trường Chinh (Lê Trọng Tấn)",            21.0028, 105.8285),
-    node("N24", "Ngã tư Vọng (Giải Phóng)",               21.0035, 105.8340),
-    node("N25", "Đại La",                                 21.0020, 105.8400),
-    node("N26", "Minh Khai (Chân cầu Vĩnh Tuy)",          21.0008, 105.8475),
-    node("N27", "Cầu Vĩnh Tuy",                           21.0000, 105.8620),
-    node("N28", "Cầu vượt TDH - Nguyễn Chí Thanh",        21.0150, 105.8000),
-    node("N29", "Nguyễn Chí Thanh (Huỳnh Thúc Kháng)",    21.0220, 105.8055),
-    node("N30", "Nguyễn Chí Thanh (ĐH Luật)",             21.0260, 105.8110),
-    node("N31", "Liễu Giai (Lotte Center)",               21.0312, 105.8180),
-    node("N32", "Tố Hữu (Vạn Phúc - Hà Đông)",            20.9810, 105.7600),
-    node("N33", "Tố Hữu (Trung Văn)",                     20.9900, 105.7770),
-    node("N34", "Lê Văn Lương (Hoàng Đạo Thúy)",          21.0050, 105.8045),
-    node("N35", "Xã Đàn (Phạm Ngọc Thạch)",               21.0120, 105.8340),
-    node("N36", "Hầm chui Kim Liên",                      21.0110, 105.8400),
-    node("N37", "Đại Cồ Việt (Tạ Quang Bửu)",             21.0105, 105.8460),
-    node("N38", "Trần Khát Chân (Phố Huế)",               21.0100, 105.8550),
-    node("N39", "Trần Khát Chân (Nguyễn Khoái)",          21.0090, 105.8630),
-    node("N40", "Bến xe Nước Ngầm",                       20.9750, 105.8435),
-    node("N41", "Bến xe Giáp Bát",                        20.9850, 105.8430),
-    node("N42", "Ga Hà Nội (Lê Duẩn)",                    21.0225, 105.8410),
-    node("N43", "Chợ Bưởi",                               21.0500, 105.8050),
-    node("N44", "Võ Chí Công (Hoàng Quốc Việt)",          21.0590, 105.8080),
-    node("N45", "Võ Chí Công (Xuân La)",                  21.0680, 105.8105),
-    node("N46", "Võ Chí Công (Cầu Gương)",                21.0790, 105.8140),
-    node("N47", "Cầu Nhật Tân",                           21.0920, 105.8180),
-    node("N48", "Ngã tư Xuân Thủy - Phạm Văn Đồng",       21.0360, 105.7820),
-    node("N49", "Phạm Văn Đồng (Hoàng Quốc Việt)",        21.0480, 105.7825),
-    node("N50", "Cổ Nhuế",                                21.0620, 105.7830),
-    node("N51", "Công viên Hòa Bình",                     21.0780, 105.7860),
-    node("N52", "Cầu Thăng Long",                         21.0980, 105.7890),
-    node("N53", "Đường Cầu Giấy",                         21.0360, 105.7900),
-    node("N54", "Cầu Giấy (Trần Thái Tông)",              21.0345, 105.7960),
-    node("N55", "Kim Mã (Đền Voi Phục)",                  21.0322, 105.8100),
-    node("N56", "Kim Mã (Giảng Võ)",                      21.0300, 105.8260),
-    node("N57", "Nguyễn Thái Học",                        21.0290, 105.8320),
-    node("N58", "Thái Hà",                                21.0080, 105.8280),
-    node("N59", "Huỳnh Thúc Kháng",                       21.0150, 105.8180)
+    node("N02", "Nguyễn Trãi (Vũ Trọng Phụng)", 20.9961, 105.8101),
+    node("N03", "Nguyễn Trãi (Thượng Đình)", 20.9978, 105.8124),
+    node("N04", "Nút giao Ngã Tư Sở", 20.9997, 105.8148),
+    node("N05", "Tây Sơn (ĐH Thủy Lợi)", 21.0028, 105.8183),
+    node("N06", "Tây Sơn (Chùa Bộc)", 21.0062, 105.8217),
+    node("N07", "Tây Sơn (Ngã tư Thái Hà)", 21.009, 105.8235),
+    node("N08", "Ngã sáu Ô Chợ Dừa", 21.0135, 105.827),
+    node("N09", "Tôn Đức Thắng", 21.018, 105.83),
+    node("N10", "Nút giao Cầu Giấy - Láng", 21.033, 105.801),
+    node("N11", "Láng (Chùa Láng)", 21.0285, 105.8032),
+    node("N12", "Láng (Nguyễn Chí Thanh)", 21.022, 105.8055),
+    node("N13", "Láng (Lê Văn Lương)", 21.0175, 105.808),
+    node("N14", "Láng (Yên Lãng)", 21.0095, 105.8115),
+    node("N15", "Bến xe Mỹ Đình", 21.0282, 105.7818),
+    node("N16", "Phạm Hùng (Mễ Trì)", 21.023, 105.784),
+    node("N17", "Keangnam / Landmark 72", 21.0165, 105.7878),
+    node("N18", "Nút giao Trần Duy Hưng", 21.0085, 105.7945),
+    node("N19", "Khuất Duy Tiến (Lê Văn Lương)", 21.0015, 105.801),
+    node("N20", "Nguyễn Xiển (ĐH Thăng Long)", 20.988, 105.813),
+    node("N21", "Nút giao Linh Đàm", 20.98, 105.8205),
+    node("N22", "Trường Chinh (Tôn Thất Tùng)", 21.0012, 105.821),
+    node("N23", "Trường Chinh (Lê Trọng Tấn)", 21.0028, 105.8285),
+    node("N24", "Ngã tư Vọng (Giải Phóng)", 21.0035, 105.834),
+    node("N25", "Đại La", 21.002, 105.84),
+    node("N26", "Minh Khai (Chân cầu Vĩnh Tuy)", 21.0008, 105.8475),
+    node("N27", "Cầu Vĩnh Tuy", 21.0, 105.862),
+    node("N28", "Cầu vượt TDH - Nguyễn Chí Thanh", 21.015, 105.8),
+    node("N29", "Nguyễn Chí Thanh (Huỳnh Thúc Kháng)", 21.022, 105.8055),
+    node("N30", "Nguyễn Chí Thanh (ĐH Luật)", 21.026, 105.811),
+    node("N31", "Liễu Giai (Lotte Center)", 21.0312, 105.818),
+    node("N32", "Tố Hữu (Vạn Phúc - Hà Đông)", 20.981, 105.76),
+    node("N33", "Tố Hữu (Trung Văn)", 20.99, 105.777),
+    node("N34", "Lê Văn Lương (Hoàng Đạo Thúy)", 21.005, 105.8045),
+    node("N35", "Xã Đàn (Phạm Ngọc Thạch)", 21.012, 105.834),
+    node("N36", "Hầm chui Kim Liên", 21.011, 105.84),
+    node("N37", "Đại Cồ Việt (Tạ Quang Bửu)", 21.0105, 105.846),
+    node("N38", "Trần Khát Chân (Phố Huế)", 21.01, 105.855),
+    node("N39", "Trần Khát Chân (Nguyễn Khoái)", 21.009, 105.863),
+    node("N40", "Bến xe Nước Ngầm", 20.975, 105.8435),
+    node("N41", "Bến xe Giáp Bát", 20.985, 105.843),
+    node("N42", "Ga Hà Nội (Lê Duẩn)", 21.0225, 105.841),
+    node("N43", "Chợ Bưởi", 21.05, 105.805),
+    node("N44", "Võ Chí Công (Hoàng Quốc Việt)", 21.059, 105.808),
+    node("N45", "Võ Chí Công (Xuân La)", 21.068, 105.8105),
+    node("N46", "Võ Chí Công (Cầu Gương)", 21.079, 105.814),
+    node("N47", "Cầu Nhật Tân", 21.092, 105.818),
+    node("N48", "Ngã tư Xuân Thủy - Phạm Văn Đồng", 21.036, 105.782),
+    node("N49", "Phạm Văn Đồng (Hoàng Quốc Việt)", 21.048, 105.7825),
+    node("N50", "Cổ Nhuế", 21.062, 105.783),
+    node("N51", "Công viên Hòa Bình", 21.078, 105.786),
+    node("N52", "Cầu Thăng Long", 21.098, 105.789),
+    node("N53", "Đường Cầu Giấy", 21.036, 105.79),
+    node("N54", "Cầu Giấy (Trần Thái Tông)", 21.0345, 105.796),
+    node("N55", "Kim Mã (Đền Voi Phục)", 21.0322, 105.81),
+    node("N56", "Kim Mã (Giảng Võ)", 21.03, 105.826),
+    node("N57", "Nguyễn Thái Học", 21.029, 105.832),
+    node("N58", "Thái Hà", 21.008, 105.828),
+    node("N59", "Huỳnh Thúc Kháng", 21.015, 105.818),
   ];
 
-  const N = Object.fromEntries(MOCK_NODES.map(n => [n.node_code, n]));
+  const N = Object.fromEntries(MOCK_NODES.map((n) => [n.node_code, n]));
 
   /**
    * Tạo 1 edge: edge_code, street_name, corridor_name, from, to,
    * max_speed_limit, congestion_level (khớp TrafficRecords)
    */
-  function edge(code, street, corridor, fromCode, toCode, maxSpeed, level, speed) {
+  function edge(
+    code,
+    street,
+    corridor,
+    fromCode,
+    toCode,
+    maxSpeed,
+    level,
+    speed,
+  ) {
     return {
       edge_code: code,
       street_name: street,
@@ -187,84 +238,345 @@ document.addEventListener("DOMContentLoaded", () => {
       to: N[toCode],
       congestion_level: level,
       color_code: CONGESTION_LEVELS[level].color,
-      speed: speed ? `${speed} km/h` : null
+      speed: speed ? `${speed} km/h` : null,
     };
   }
 
   const MOCK_EDGES = [
     // ---- R01: Trục Nguyễn Trãi - Ngã Tư Sở - Tây Sơn ----
-    edge("E0101", "Nguyễn Trãi",            "Nguyễn Trãi - Tây Sơn", "N01", "N02", 50, 4, 4),
-    edge("E0102", "Nguyễn Trãi",            "Nguyễn Trãi - Tây Sơn", "N02", "N03", 50, 4, 4),
-    edge("E0103", "Nguyễn Trãi",            "Nguyễn Trãi - Tây Sơn", "N03", "N04", 50, 3, 10),
-    edge("E0104", "Tây Sơn",                "Nguyễn Trãi - Tây Sơn", "N04", "N05", 50, 3, 12),
-    edge("E0105", "Tây Sơn",                "Nguyễn Trãi - Tây Sơn", "N05", "N06", 50, 2, 20),
-    edge("E0106", "Tây Sơn",                "Nguyễn Trãi - Tây Sơn", "N06", "N07", 50, 2, 22),
-    edge("E0107", "Tây Sơn",                "Nguyễn Trãi - Tây Sơn", "N07", "N08", 50, 1, 38),
-    edge("E0108", "Tôn Đức Thắng",          "Nguyễn Trãi - Tây Sơn", "N08", "N09", 50, 1, 40),
+    edge(
+      "E0101",
+      "Nguyễn Trãi",
+      "Nguyễn Trãi - Tây Sơn",
+      "N01",
+      "N02",
+      50,
+      4,
+      4,
+    ),
+    edge(
+      "E0102",
+      "Nguyễn Trãi",
+      "Nguyễn Trãi - Tây Sơn",
+      "N02",
+      "N03",
+      50,
+      4,
+      4,
+    ),
+    edge(
+      "E0103",
+      "Nguyễn Trãi",
+      "Nguyễn Trãi - Tây Sơn",
+      "N03",
+      "N04",
+      50,
+      3,
+      10,
+    ),
+    edge("E0104", "Tây Sơn", "Nguyễn Trãi - Tây Sơn", "N04", "N05", 50, 3, 12),
+    edge("E0105", "Tây Sơn", "Nguyễn Trãi - Tây Sơn", "N05", "N06", 50, 2, 20),
+    edge("E0106", "Tây Sơn", "Nguyễn Trãi - Tây Sơn", "N06", "N07", 50, 2, 22),
+    edge("E0107", "Tây Sơn", "Nguyễn Trãi - Tây Sơn", "N07", "N08", 50, 1, 38),
+    edge(
+      "E0108",
+      "Tôn Đức Thắng",
+      "Nguyễn Trãi - Tây Sơn",
+      "N08",
+      "N09",
+      50,
+      1,
+      40,
+    ),
     // ---- R02: Đường Láng ----
-    edge("E0201", "Đường Láng",             "Đường Láng",            "N10", "N11", 60, 3, 12),
-    edge("E0202", "Đường Láng",             "Đường Láng",            "N11", "N12", 60, 3, 10),
-    edge("E0203", "Đường Láng",             "Đường Láng",            "N12", "N13", 60, 2, 18),
-    edge("E0204", "Đường Láng",             "Đường Láng",            "N13", "N14", 60, 2, 20),
-    edge("E0205", "Đường Láng",             "Đường Láng",            "N14", "N04", 60, 1, 35),
+    edge("E0201", "Đường Láng", "Đường Láng", "N10", "N11", 60, 3, 12),
+    edge("E0202", "Đường Láng", "Đường Láng", "N11", "N12", 60, 3, 10),
+    edge("E0203", "Đường Láng", "Đường Láng", "N12", "N13", 60, 2, 18),
+    edge("E0204", "Đường Láng", "Đường Láng", "N13", "N14", 60, 2, 20),
+    edge("E0205", "Đường Láng", "Đường Láng", "N14", "N04", 60, 1, 35),
     // ---- R03: Vành Đai 3 ----
-    edge("E0301", "Phạm Hùng",              "Vành Đai 3",            "N15", "N16", 80, 1, 55),
-    edge("E0302", "Phạm Hùng",              "Vành Đai 3",            "N16", "N17", 80, 1, 50),
-    edge("E0303", "Phạm Hùng",              "Vành Đai 3",            "N17", "N18", 80, 3, 12),
-    edge("E0304", "Khuất Duy Tiến",         "Vành Đai 3",            "N18", "N19", 80, 4, 3),
-    edge("E0305", "Khuất Duy Tiến",         "Vành Đai 3",            "N19", "N01", 80, 4, 3),
-    edge("E0306", "Nguyễn Xiển",            "Vành Đai 3",            "N01", "N20", 80, 2, 20),
-    edge("E0307", "Nguyễn Xiển",            "Vành Đai 3",            "N20", "N21", 80, 1, 45),
+    edge("E0301", "Phạm Hùng", "Vành Đai 3", "N15", "N16", 80, 1, 55),
+    edge("E0302", "Phạm Hùng", "Vành Đai 3", "N16", "N17", 80, 1, 50),
+    edge("E0303", "Phạm Hùng", "Vành Đai 3", "N17", "N18", 80, 3, 12),
+    edge("E0304", "Khuất Duy Tiến", "Vành Đai 3", "N18", "N19", 80, 4, 3),
+    edge("E0305", "Khuất Duy Tiến", "Vành Đai 3", "N19", "N01", 80, 4, 3),
+    edge("E0306", "Nguyễn Xiển", "Vành Đai 3", "N01", "N20", 80, 2, 20),
+    edge("E0307", "Nguyễn Xiển", "Vành Đai 3", "N20", "N21", 80, 1, 45),
     // ---- R04: Trường Chinh - Đại La - Minh Khai ----
-    edge("E0401", "Trường Chinh",           "Trường Chinh - Minh Khai", "N04", "N22", 60, 2, 20),
-    edge("E0402", "Trường Chinh",           "Trường Chinh - Minh Khai", "N22", "N23", 60, 3, 12),
-    edge("E0403", "Trường Chinh",           "Trường Chinh - Minh Khai", "N23", "N24", 60, 3, 10),
-    edge("E0404", "Đại La",                 "Trường Chinh - Minh Khai", "N24", "N25", 60, 2, 18),
-    edge("E0405", "Minh Khai",              "Trường Chinh - Minh Khai", "N25", "N26", 60, 1, 40),
-    edge("E0406", "Minh Khai",              "Trường Chinh - Minh Khai", "N26", "N27", 60, 1, 42),
+    edge(
+      "E0401",
+      "Trường Chinh",
+      "Trường Chinh - Minh Khai",
+      "N04",
+      "N22",
+      60,
+      2,
+      20,
+    ),
+    edge(
+      "E0402",
+      "Trường Chinh",
+      "Trường Chinh - Minh Khai",
+      "N22",
+      "N23",
+      60,
+      3,
+      12,
+    ),
+    edge(
+      "E0403",
+      "Trường Chinh",
+      "Trường Chinh - Minh Khai",
+      "N23",
+      "N24",
+      60,
+      3,
+      10,
+    ),
+    edge(
+      "E0404",
+      "Đại La",
+      "Trường Chinh - Minh Khai",
+      "N24",
+      "N25",
+      60,
+      2,
+      18,
+    ),
+    edge(
+      "E0405",
+      "Minh Khai",
+      "Trường Chinh - Minh Khai",
+      "N25",
+      "N26",
+      60,
+      1,
+      40,
+    ),
+    edge(
+      "E0406",
+      "Minh Khai",
+      "Trường Chinh - Minh Khai",
+      "N26",
+      "N27",
+      60,
+      1,
+      42,
+    ),
     // ---- R05: Trần Duy Hưng - Nguyễn Chí Thanh ----
-    edge("E0501", "Trần Duy Hưng",          "Trần Duy Hưng - Liễu Giai", "N18", "N28", 60, 1, 42),
-    edge("E0502", "Nguyễn Chí Thanh",       "Trần Duy Hưng - Liễu Giai", "N28", "N29", 60, 2, 22),
-    edge("E0503", "Nguyễn Chí Thanh",       "Trần Duy Hưng - Liễu Giai", "N29", "N30", 60, 3, 10),
-    edge("E0504", "Liễu Giai",              "Trần Duy Hưng - Liễu Giai", "N30", "N31", 60, 2, 24),
+    edge(
+      "E0501",
+      "Trần Duy Hưng",
+      "Trần Duy Hưng - Liễu Giai",
+      "N18",
+      "N28",
+      60,
+      1,
+      42,
+    ),
+    edge(
+      "E0502",
+      "Nguyễn Chí Thanh",
+      "Trần Duy Hưng - Liễu Giai",
+      "N28",
+      "N29",
+      60,
+      2,
+      22,
+    ),
+    edge(
+      "E0503",
+      "Nguyễn Chí Thanh",
+      "Trần Duy Hưng - Liễu Giai",
+      "N29",
+      "N30",
+      60,
+      3,
+      10,
+    ),
+    edge(
+      "E0504",
+      "Liễu Giai",
+      "Trần Duy Hưng - Liễu Giai",
+      "N30",
+      "N31",
+      60,
+      2,
+      24,
+    ),
     // ---- R06: Lê Văn Lương - Tố Hữu ----
-    edge("E0601", "Tố Hữu",                 "Lê Văn Lương - Tố Hữu", "N32", "N33", 60, 4, 4),
-    edge("E0602", "Tố Hữu",                 "Lê Văn Lương - Tố Hữu", "N33", "N19", 60, 4, 4),
-    edge("E0603", "Lê Văn Lương",           "Lê Văn Lương - Tố Hữu", "N19", "N34", 60, 3, 12),
-    edge("E0604", "Lê Văn Lương",           "Lê Văn Lương - Tố Hữu", "N34", "N13", 60, 1, 45),
+    edge("E0601", "Tố Hữu", "Lê Văn Lương - Tố Hữu", "N32", "N33", 60, 4, 4),
+    edge("E0602", "Tố Hữu", "Lê Văn Lương - Tố Hữu", "N33", "N19", 60, 4, 4),
+    edge(
+      "E0603",
+      "Lê Văn Lương",
+      "Lê Văn Lương - Tố Hữu",
+      "N19",
+      "N34",
+      60,
+      3,
+      12,
+    ),
+    edge(
+      "E0604",
+      "Lê Văn Lương",
+      "Lê Văn Lương - Tố Hữu",
+      "N34",
+      "N13",
+      60,
+      1,
+      45,
+    ),
     // ---- R07: Vành Đai 1 (Xã Đàn - Trần Khát Chân) ----
-    edge("E0701", "Xã Đàn",                 "Vành Đai 1",            "N08", "N35", 60, 2, 20),
-    edge("E0702", "Xã Đàn",                 "Vành Đai 1",            "N35", "N36", 60, 1, 40),
-    edge("E0703", "Đại Cồ Việt",            "Vành Đai 1",            "N36", "N37", 60, 1, 42),
-    edge("E0704", "Trần Khát Chân",         "Vành Đai 1",            "N37", "N38", 60, 2, 20),
-    edge("E0705", "Trần Khát Chân",         "Vành Đai 1",            "N38", "N39", 60, 2, 22),
+    edge("E0701", "Xã Đàn", "Vành Đai 1", "N08", "N35", 60, 2, 20),
+    edge("E0702", "Xã Đàn", "Vành Đai 1", "N35", "N36", 60, 1, 40),
+    edge("E0703", "Đại Cồ Việt", "Vành Đai 1", "N36", "N37", 60, 1, 42),
+    edge("E0704", "Trần Khát Chân", "Vành Đai 1", "N37", "N38", 60, 2, 20),
+    edge("E0705", "Trần Khát Chân", "Vành Đai 1", "N38", "N39", 60, 2, 22),
     // ---- R08: Giải Phóng - Lê Duẩn ----
-    edge("E0801", "Giải Phóng",             "Giải Phóng - Lê Duẩn",  "N40", "N41", 70, 2, 20),
-    edge("E0802", "Giải Phóng",             "Giải Phóng - Lê Duẩn",  "N41", "N24", 70, 2, 24),
-    edge("E0803", "Giải Phóng",             "Giải Phóng - Lê Duẩn",  "N24", "N36", 70, 1, 45),
-    edge("E0804", "Lê Duẩn",                "Giải Phóng - Lê Duẩn",  "N36", "N42", 70, 1, 48),
+    edge(
+      "E0801",
+      "Giải Phóng",
+      "Giải Phóng - Lê Duẩn",
+      "N40",
+      "N41",
+      70,
+      2,
+      20,
+    ),
+    edge(
+      "E0802",
+      "Giải Phóng",
+      "Giải Phóng - Lê Duẩn",
+      "N41",
+      "N24",
+      70,
+      2,
+      24,
+    ),
+    edge(
+      "E0803",
+      "Giải Phóng",
+      "Giải Phóng - Lê Duẩn",
+      "N24",
+      "N36",
+      70,
+      1,
+      45,
+    ),
+    edge("E0804", "Lê Duẩn", "Giải Phóng - Lê Duẩn", "N36", "N42", 70, 1, 48),
     // ---- R09: Võ Chí Công - Cầu Nhật Tân ----
-    edge("E0901", "Võ Chí Công",            "Võ Chí Công - Nhật Tân", "N43", "N44", 80, 1, 55),
-    edge("E0902", "Võ Chí Công",            "Võ Chí Công - Nhật Tân", "N44", "N45", 80, 1, 55),
-    edge("E0903", "Võ Chí Công",            "Võ Chí Công - Nhật Tân", "N45", "N46", 80, 1, 55),
-    edge("E0904", "Võ Chí Công",            "Võ Chí Công - Nhật Tân", "N46", "N47", 80, 1, 55),
+    edge(
+      "E0901",
+      "Võ Chí Công",
+      "Võ Chí Công - Nhật Tân",
+      "N43",
+      "N44",
+      80,
+      1,
+      55,
+    ),
+    edge(
+      "E0902",
+      "Võ Chí Công",
+      "Võ Chí Công - Nhật Tân",
+      "N44",
+      "N45",
+      80,
+      1,
+      55,
+    ),
+    edge(
+      "E0903",
+      "Võ Chí Công",
+      "Võ Chí Công - Nhật Tân",
+      "N45",
+      "N46",
+      80,
+      1,
+      55,
+    ),
+    edge(
+      "E0904",
+      "Võ Chí Công",
+      "Võ Chí Công - Nhật Tân",
+      "N46",
+      "N47",
+      80,
+      1,
+      55,
+    ),
     // ---- R10: Phạm Văn Đồng ----
-    edge("E1001", "Phạm Văn Đồng",          "Phạm Văn Đồng - Cầu Thăng Long", "N48", "N49", 70, 1, 48),
-    edge("E1002", "Phạm Văn Đồng",          "Phạm Văn Đồng - Cầu Thăng Long", "N49", "N50", 70, 1, 48),
-    edge("E1003", "Phạm Văn Đồng",          "Phạm Văn Đồng - Cầu Thăng Long", "N50", "N51", 70, 1, 48),
-    edge("E1004", "Phạm Văn Đồng",          "Phạm Văn Đồng - Cầu Thăng Long", "N51", "N52", 70, 1, 48),
+    edge(
+      "E1001",
+      "Phạm Văn Đồng",
+      "Phạm Văn Đồng - Cầu Thăng Long",
+      "N48",
+      "N49",
+      70,
+      1,
+      48,
+    ),
+    edge(
+      "E1002",
+      "Phạm Văn Đồng",
+      "Phạm Văn Đồng - Cầu Thăng Long",
+      "N49",
+      "N50",
+      70,
+      1,
+      48,
+    ),
+    edge(
+      "E1003",
+      "Phạm Văn Đồng",
+      "Phạm Văn Đồng - Cầu Thăng Long",
+      "N50",
+      "N51",
+      70,
+      1,
+      48,
+    ),
+    edge(
+      "E1004",
+      "Phạm Văn Đồng",
+      "Phạm Văn Đồng - Cầu Thăng Long",
+      "N51",
+      "N52",
+      70,
+      1,
+      48,
+    ),
     // ---- R11: Cầu Giấy - Kim Mã ----
-    edge("E1101", "Cầu Giấy",               "Cầu Giấy - Kim Mã",     "N53", "N54", 60, 3, 10),
-    edge("E1102", "Cầu Giấy",               "Cầu Giấy - Kim Mã",     "N54", "N10", 60, 3, 12),
-    edge("E1103", "Kim Mã",                 "Cầu Giấy - Kim Mã",     "N10", "N55", 60, 3, 12),
-    edge("E1104", "Kim Mã",                 "Cầu Giấy - Kim Mã",     "N55", "N31", 60, 2, 20),
-    edge("E1105", "Kim Mã",                 "Cầu Giấy - Kim Mã",     "N31", "N56", 60, 2, 22),
-    edge("E1106", "Nguyễn Thái Học",        "Cầu Giấy - Kim Mã",     "N56", "N57", 60, 1, 35),
+    edge("E1101", "Cầu Giấy", "Cầu Giấy - Kim Mã", "N53", "N54", 60, 3, 10),
+    edge("E1102", "Cầu Giấy", "Cầu Giấy - Kim Mã", "N54", "N10", 60, 3, 12),
+    edge("E1103", "Kim Mã", "Cầu Giấy - Kim Mã", "N10", "N55", 60, 3, 12),
+    edge("E1104", "Kim Mã", "Cầu Giấy - Kim Mã", "N55", "N31", 60, 2, 20),
+    edge("E1105", "Kim Mã", "Cầu Giấy - Kim Mã", "N31", "N56", 60, 2, 22),
+    edge(
+      "E1106",
+      "Nguyễn Thái Học",
+      "Cầu Giấy - Kim Mã",
+      "N56",
+      "N57",
+      60,
+      1,
+      35,
+    ),
     // ---- R12: Chùa Bộc - Thái Hà ----
-    edge("E1201", "Chùa Bộc",               "Chùa Bộc - Thái Hà",    "N06", "N58", 50, 3, 10),
-    edge("E1202", "Thái Hà",                "Chùa Bộc - Thái Hà",    "N58", "N07", 50, 1, 38),
-    edge("E1203", "Thái Hà",                "Chùa Bộc - Thái Hà",    "N07", "N59", 50, 2, 20),
-    edge("E1204", "Huỳnh Thúc Kháng",       "Chùa Bộc - Thái Hà",    "N59", "N29", 50, 3, 10)
+    edge("E1201", "Chùa Bộc", "Chùa Bộc - Thái Hà", "N06", "N58", 50, 3, 10),
+    edge("E1202", "Thái Hà", "Chùa Bộc - Thái Hà", "N58", "N07", 50, 1, 38),
+    edge("E1203", "Thái Hà", "Chùa Bộc - Thái Hà", "N07", "N59", 50, 2, 20),
+    edge(
+      "E1204",
+      "Huỳnh Thúc Kháng",
+      "Chùa Bộc - Thái Hà",
+      "N59",
+      "N29",
+      50,
+      3,
+      10,
+    ),
   ];
 
   // ============================================================
@@ -286,20 +598,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const routeDistance = document.getElementById("route-distance");
   const routeDuration = document.getElementById("route-duration");
 
-  const map = L.map('map-canvas').setView([21.0180, 105.8150], 13);
+  const map = L.map("map-canvas").setView([21.018, 105.815], 13);
   map.createPane("routePane");
   map.getPane("routePane").style.zIndex = "650";
   map.createPane("routeMarkerPane");
   map.getPane("routeMarkerPane").style.zIndex = "660";
 
-  const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  });
+  const tileLayer = L.tileLayer(
+    ENV.VITE_TILE_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      maxZoom: 19,
+      attribution:
+        ENV.VITE_TILE_ATTRIBUTION || "&copy; OpenStreetMap contributors",
+    },
+  );
   tileLayer.addTo(map);
 
-  tileLayer.on('load', () => {
-    if (statusOverlay) statusOverlay.style.display = 'none';
+  tileLayer.on("load", () => {
+    if (statusOverlay) statusOverlay.style.display = "none";
   });
 
   let activeRoute = null;
@@ -330,26 +646,30 @@ document.addEventListener("DOMContentLoaded", () => {
     if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
 
     const delay = Math.max(0, 1000 - (Date.now() - lastGeocodeRequestAt));
-    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
 
+    const geocoderUrl =
+      ENV.VITE_GEOCODER_URL || "https://nominatim.openstreetmap.org/search";
     const params = new URLSearchParams({
       format: "jsonv2",
       limit: "1",
       countrycodes: "vn",
       bounded: "1",
-      viewbox: "105.3,21.5,106.1,20.5",
-      q: `${query}, Hà Nội, Việt Nam`
+      viewbox: ENV.VITE_SEARCH_VIEWBOX || "105.3,21.5,106.1,20.5",
+      q: `${query}, Hà Nội, Việt Nam`,
     });
-    const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?${params}`);
+    const response = await fetchWithTimeout(`${geocoderUrl}?${params}`);
     lastGeocodeRequestAt = Date.now();
-    if (!response.ok) throw new Error(`Dịch vụ tìm địa điểm trả về HTTP ${response.status}.`);
+    if (!response.ok)
+      throw new Error(`Dịch vụ tìm địa điểm trả về HTTP ${response.status}.`);
 
     const results = await response.json();
-    if (!results.length) throw new Error(`Không tìm thấy địa điểm "${query}" tại Hà Nội.`);
+    if (!results.length)
+      throw new Error(`Không tìm thấy địa điểm "${query}" tại Hà Nội.`);
 
     const location = {
       lat: Number(results[0].lat),
-      lng: Number(results[0].lon)
+      lng: Number(results[0].lon),
     };
     geocodeCache.set(cacheKey, location);
     return location;
@@ -366,16 +686,22 @@ document.addEventListener("DOMContentLoaded", () => {
     car: { speedFactor: 1, maxSpeedKmh: 60, fallbackSpeedKmh: 30 },
     motorcycle: { speedFactor: 1.1, maxSpeedKmh: 50, fallbackSpeedKmh: 33 },
     bicycle: { speedFactor: 0.55, maxSpeedKmh: 18, fallbackSpeedKmh: 16 },
-    bus: { speedFactor: 0.85, maxSpeedKmh: 40, fallbackSpeedKmh: 26 }
+    bus: { speedFactor: 0.85, maxSpeedKmh: 40, fallbackSpeedKmh: 26 },
   };
 
   function estimateRouteDuration(routeSegments, vehicleType) {
-    const profile = VEHICLE_SPEED_PROFILES[vehicleType] || VEHICLE_SPEED_PROFILES.car;
+    const profile =
+      VEHICLE_SPEED_PROFILES[vehicleType] || VEHICLE_SPEED_PROFILES.car;
     return routeSegments.reduce((totalSeconds, segment) => {
-      const currentSpeedKmh = segment.speedKmh || CONGESTION_LEVELS[segment.level]?.speed
-        || profile.fallbackSpeedKmh;
-      const speedKmh = Math.min(currentSpeedKmh * profile.speedFactor, profile.maxSpeedKmh);
-      return totalSeconds + segment.distanceMeters / (speedKmh * 1000 / 3600);
+      const currentSpeedKmh =
+        segment.speedKmh ||
+        CONGESTION_LEVELS[segment.level]?.speed ||
+        profile.fallbackSpeedKmh;
+      const speedKmh = Math.min(
+        currentSpeedKmh * profile.speedFactor,
+        profile.maxSpeedKmh,
+      );
+      return totalSeconds + segment.distanceMeters / ((speedKmh * 1000) / 3600);
     }, 0);
   }
 
@@ -383,12 +709,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!activeRouteEstimate || !routeDuration) return;
     const vehicleType = routeVehicleSelect?.value || "car";
     routeDuration.textContent = formatDuration(
-      estimateRouteDuration(activeRouteEstimate.segments, vehicleType)
+      estimateRouteDuration(activeRouteEstimate.segments, vehicleType),
     );
   }
 
-  if (routeForm && routeOriginInput && routeDestinationInput && routeSubmitButton) {
-    routeForm.addEventListener("submit", async event => {
+  if (
+    routeForm &&
+    routeOriginInput &&
+    routeDestinationInput &&
+    routeSubmitButton
+  ) {
+    routeForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const originName = routeOriginInput.value.trim();
       const destinationName = routeDestinationInput.value.trim();
@@ -398,16 +729,22 @@ document.addEventListener("DOMContentLoaded", () => {
       if (routeCancelButton) routeCancelButton.hidden = false;
       routeSubmitButton.disabled = true;
       routeSubmitButton.textContent = "Đang tìm tuyến...";
-      setRouteStatus("Đang xác định hai địa điểm..." + (routeActive ? " Tuyến hiện tại vẫn được giữ đến khi tìm xong tuyến mới." : ""));
+      setRouteStatus(
+        "Đang xác định hai địa điểm..." +
+          (routeActive
+            ? " Tuyến hiện tại vẫn được giữ đến khi tìm xong tuyến mới."
+            : ""),
+      );
 
       try {
         const origin = await geocodeAddress(originName);
         const destination = await geocodeAddress(destinationName);
         if (requestId !== routeRequestId) return;
         const coordinates = `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
-        const routeUrl = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=false`;
+        const routeUrl = `${ROUTING_BASE_URL}/${coordinates}?overview=full&geometries=geojson&steps=false`;
         const response = await fetchWithTimeout(routeUrl);
-        if (!response.ok) throw new Error(`Dịch vụ tìm đường trả về HTTP ${response.status}.`);
+        if (!response.ok)
+          throw new Error(`Dịch vụ tìm đường trả về HTTP ${response.status}.`);
 
         const result = await response.json();
         const route = result.code === "Ok" ? result.routes?.[0] : null;
@@ -422,10 +759,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (requestId !== routeRequestId) return;
 
-        const routePoints = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
-        const trafficSegments = buildTrafficColoredRoute(routePoints, route.distance);
+        const routePoints = route.geometry.coordinates.map(([lng, lat]) => [
+          lat,
+          lng,
+        ]);
+        const trafficSegments = buildTrafficColoredRoute(
+          routePoints,
+          route.distance,
+        );
         const routeLines = L.featureGroup(
-          trafficSegments.map(segment => createRouteSegment(segment.points, segment.level))
+          trafficSegments.map((segment) =>
+            createRouteSegment(segment.points, segment.level),
+          ),
         );
         const startMarker = L.circleMarker([origin.lat, origin.lng], {
           pane: "routeMarkerPane",
@@ -433,7 +778,7 @@ document.addEventListener("DOMContentLoaded", () => {
           color: "#ffffff",
           weight: 3,
           fillColor: "#16a34a",
-          fillOpacity: 1
+          fillOpacity: 1,
         });
         const endMarker = L.circleMarker([destination.lat, destination.lng], {
           pane: "routeMarkerPane",
@@ -441,9 +786,13 @@ document.addEventListener("DOMContentLoaded", () => {
           color: "#ffffff",
           weight: 3,
           fillColor: "#dc2626",
-          fillOpacity: 1
+          fillOpacity: 1,
         });
-        const nextRoute = L.featureGroup([routeLines, startMarker, endMarker]).addTo(map);
+        const nextRoute = L.featureGroup([
+          routeLines,
+          startMarker,
+          endMarker,
+        ]).addTo(map);
         if (activeRoute) map.removeLayer(activeRoute);
         activeRoute = nextRoute;
         activeRouteEstimate = { segments: trafficSegments };
@@ -451,19 +800,24 @@ document.addEventListener("DOMContentLoaded", () => {
         setBaseRoadsDimmed(true);
         if (routeCancelButton) routeCancelButton.hidden = false;
 
-        map.fitBounds(routeLines.getBounds(), { padding: [48, 48], maxZoom: 16 });
-        if (routeDistance) routeDistance.textContent = `${fmt(route.distance / 1000, 2)} km`;
+        map.fitBounds(routeLines.getBounds(), {
+          padding: [48, 48],
+          maxZoom: 16,
+        });
+        if (routeDistance)
+          routeDistance.textContent = `${fmt(route.distance / 1000, 2)} km`;
         updateRouteDuration();
         if (routeSummary) routeSummary.hidden = false;
         if (detailDiv) detailDiv.hidden = true;
         setRouteStatus(`${originName} → ${destinationName}`);
       } catch (error) {
         if (requestId !== routeRequestId) return;
-        const message = error instanceof Error && error.name === "AbortError"
-          ? "Dịch vụ tìm địa điểm hoặc tuyến đường hết thời gian chờ. Vui lòng thử lại."
-          : error instanceof Error
-            ? error.message
-            : "Không thể tìm tuyến đường.";
+        const message =
+          error instanceof Error && error.name === "AbortError"
+            ? "Dịch vụ tìm địa điểm hoặc tuyến đường hết thời gian chờ. Vui lòng thử lại."
+            : error instanceof Error
+              ? error.message
+              : "Không thể tìm tuyến đường.";
         setRouteStatus(message, true);
         if (!routeActive && routeCancelButton) routeCancelButton.hidden = true;
       } finally {
@@ -502,9 +856,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function createRouteSegment(points, trafficLevel) {
-    const color = trafficLevel && CONGESTION_LEVELS[trafficLevel]
-      ? CONGESTION_LEVELS[trafficLevel].color
-      : "#64748b";
+    const color =
+      trafficLevel && CONGESTION_LEVELS[trafficLevel]
+        ? CONGESTION_LEVELS[trafficLevel].color
+        : "#64748b";
     return L.polyline(points, {
       pane: "routePane",
       color,
@@ -512,7 +867,7 @@ document.addEventListener("DOMContentLoaded", () => {
       opacity: 1,
       lineCap: "round",
       lineJoin: "round",
-      interactive: false
+      interactive: false,
     });
   }
 
@@ -522,18 +877,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
   function groupByCorridor(edges) {
     const groups = new Map();
-    edges.forEach(e => {
+    edges.forEach((e) => {
       const key = e.corridor_name || e.street_name;
       if (!groups.has(key)) {
         groups.set(key, {
           corridor_name: key,
-          edges: []
+          edges: [],
         });
       }
       groups.get(key).edges.push(e);
     });
     // Sắp edge trong corridor theo thứ tự nối (from -> to cạnh nhau)
-    groups.forEach(g => {
+    groups.forEach((g) => {
       g.edges.sort((a, b) => {
         const idxA = a.from ? a.from.lat + a.from.lng : 0;
         const idxB = b.from ? b.from.lat + b.from.lng : 0;
@@ -549,11 +904,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const mapPolylines = []; // { corridor, segmentLayers, distances, totalKm, avgSpeed, maxSpeedLimit }
 
   function setBaseRoadsDimmed(dimmed) {
-    mapPolylines.forEach(entry => {
-      entry.segmentLayers.forEach(layer => {
+    mapPolylines.forEach((entry) => {
+      entry.segmentLayers.forEach((layer) => {
         layer.setStyle({
           weight: dimmed ? 4 : 7,
-          opacity: dimmed ? 0.12 : 0.88
+          opacity: dimmed ? 0.12 : 0.88,
         });
       });
     });
@@ -562,10 +917,11 @@ document.addEventListener("DOMContentLoaded", () => {
   function findNearbyTraffic(point) {
     let nearest = null;
 
-    mapPolylines.forEach(entry => {
+    mapPolylines.forEach((entry) => {
       entry.corridor.edges.forEach((edge, index) => {
         const speedKmh = parseSpeedKmh(edge.speed);
-        const level = trafficLevelFromSpeed(speedKmh) ?? Number(edge.congestion_level);
+        const level =
+          trafficLevelFromSpeed(speedKmh) ?? Number(edge.congestion_level);
         const roadPoints = entry.segmentLayers[index].getLatLngs();
         if (!CONGESTION_LEVELS[level] || roadPoints.length < 2) return;
 
@@ -573,20 +929,22 @@ document.addEventListener("DOMContentLoaded", () => {
           const distance = distToSegment(
             point,
             [roadPoints[pointIndex - 1].lat, roadPoints[pointIndex - 1].lng],
-            [roadPoints[pointIndex].lat, roadPoints[pointIndex].lng]
+            [roadPoints[pointIndex].lat, roadPoints[pointIndex].lng],
           );
           if (!nearest || distance < nearest.distance) {
             nearest = {
               distance,
               level,
-              speedKmh
+              speedKmh,
             };
           }
         }
       });
     });
 
-    return nearest && nearest.distance <= 150 && CONGESTION_LEVELS[nearest.level]
+    return nearest &&
+      nearest.distance <= 150 &&
+      CONGESTION_LEVELS[nearest.level]
       ? nearest
       : { level: null, speedKmh: null };
   }
@@ -600,7 +958,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const start = points[index - 1];
       const end = points[index];
       const legDistanceMeters = haversine(start, end);
-      const sampleCount = Math.max(1, Math.ceil(legDistanceMeters / sampleLengthMeters));
+      const sampleCount = Math.max(
+        1,
+        Math.ceil(legDistanceMeters / sampleLengthMeters),
+      );
       const sampleDistanceMeters = legDistanceMeters / sampleCount;
 
       for (let sample = 0; sample < sampleCount; sample++) {
@@ -608,15 +969,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const endRatio = (sample + 1) / sampleCount;
         const sampleStart = [
           start[0] + (end[0] - start[0]) * startRatio,
-          start[1] + (end[1] - start[1]) * startRatio
+          start[1] + (end[1] - start[1]) * startRatio,
         ];
         const sampleEnd = [
           start[0] + (end[0] - start[0]) * endRatio,
-          start[1] + (end[1] - start[1]) * endRatio
+          start[1] + (end[1] - start[1]) * endRatio,
         ];
         const midpoint = [
           (sampleStart[0] + sampleEnd[0]) / 2,
-          (sampleStart[1] + sampleEnd[1]) / 2
+          (sampleStart[1] + sampleEnd[1]) / 2,
         ];
         const traffic = findNearbyTraffic(midpoint);
         const currentSegment = segments[segments.length - 1];
@@ -626,11 +987,12 @@ document.addEventListener("DOMContentLoaded", () => {
           currentSegment.distanceMeters += sampleDistanceMeters;
           if (traffic.speedKmh) {
             const previousDistance = currentSegment.speedDistanceMeters || 0;
-            currentSegment.speedKmh = (
-              (currentSegment.speedKmh || 0) * previousDistance +
-              traffic.speedKmh * sampleDistanceMeters
-            ) / (previousDistance + sampleDistanceMeters);
-            currentSegment.speedDistanceMeters = previousDistance + sampleDistanceMeters;
+            currentSegment.speedKmh =
+              ((currentSegment.speedKmh || 0) * previousDistance +
+                traffic.speedKmh * sampleDistanceMeters) /
+              (previousDistance + sampleDistanceMeters);
+            currentSegment.speedDistanceMeters =
+              previousDistance + sampleDistanceMeters;
           }
         } else {
           segments.push({
@@ -638,7 +1000,7 @@ document.addEventListener("DOMContentLoaded", () => {
             speedKmh: traffic.speedKmh,
             speedDistanceMeters: traffic.speedKmh ? sampleDistanceMeters : 0,
             points: [sampleStart, sampleEnd],
-            distanceMeters: sampleDistanceMeters
+            distanceMeters: sampleDistanceMeters,
           });
         }
         geometryDistanceMeters += sampleDistanceMeters;
@@ -647,7 +1009,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (geometryDistanceMeters > 0 && Number.isFinite(routeDistanceMeters)) {
       const distanceScale = routeDistanceMeters / geometryDistanceMeters;
-      segments.forEach(segment => {
+      segments.forEach((segment) => {
         segment.distanceMeters *= distanceScale;
       });
     }
@@ -655,7 +1017,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function mergeShortTrafficSegments(segments, minLengthMeters) {
-    const merged = segments.map(segment => ({ ...segment, points: [...segment.points] }));
+    const merged = segments.map((segment) => ({
+      ...segment,
+      points: [...segment.points],
+    }));
     let index = 0;
     while (index < merged.length - 1) {
       const source = merged[index];
@@ -669,10 +1034,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const target = merged[targetIndex];
       const totalDistance = target.distanceMeters + source.distanceMeters;
       if (target.speedKmh && source.speedKmh) {
-        target.speedKmh = (
-          target.speedKmh * target.distanceMeters +
-          source.speedKmh * source.distanceMeters
-        ) / totalDistance;
+        target.speedKmh =
+          (target.speedKmh * target.distanceMeters +
+            source.speedKmh * source.distanceMeters) /
+          totalDistance;
       } else {
         target.speedKmh = target.speedKmh || source.speedKmh;
       }
@@ -693,10 +1058,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const totalDistance = previous.distanceMeters + segment.distanceMeters;
       if (previous.speedKmh && segment.speedKmh) {
-        previous.speedKmh = (
-          previous.speedKmh * previous.distanceMeters +
-          segment.speedKmh * segment.distanceMeters
-        ) / totalDistance;
+        previous.speedKmh =
+          (previous.speedKmh * previous.distanceMeters +
+            segment.speedKmh * segment.distanceMeters) /
+          totalDistance;
       } else {
         previous.speedKmh = previous.speedKmh || segment.speedKmh;
       }
@@ -711,7 +1076,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const rad = Math.PI / 180;
     const dLat = (b[0] - a[0]) * rad;
     const dLng = (b[1] - a[1]) * rad;
-    const h = Math.sin(dLat / 2) ** 2 +
+    const h =
+      Math.sin(dLat / 2) ** 2 +
       Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(h));
   }
@@ -728,10 +1094,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const by = b[0] * metersPerDegree;
     const px = p[1] * metersPerDegree * cosLat;
     const py = p[0] * metersPerDegree;
-    const dx = bx - ax, dy = by - ay;
+    const dx = bx - ax,
+      dy = by - ay;
     if (dx === 0 && dy === 0) return haversine(p, a);
-    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) /
-      (dx * dx + dy * dy)));
+    const t = Math.max(
+      0,
+      Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)),
+    );
     return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
   }
 
@@ -750,22 +1119,23 @@ document.addEventListener("DOMContentLoaded", () => {
    */
   async function snapEdgeGeometry(from, to) {
     const coordStr = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=false`;
+    const url = `${ROUTING_BASE_URL}/${coordStr}?overview=full&geometries=geojson&steps=false`;
     try {
       const res = await fetch(url);
       if (!res.ok) return null;
       const data = await res.json();
-      if (data.code !== 'Ok' || !data.routes || !data.routes.length) return null;
+      if (data.code !== "Ok" || !data.routes || !data.routes.length)
+        return null;
 
       const route = data.routes[0];
       const coordinates = route.geometry?.coordinates;
       if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
       return {
         pts: coordinates.map(([lng, lat]) => [lat, lng]),
-        distance: route.distance
+        distance: route.distance,
       };
     } catch (err) {
-      console.warn('OSRM snap thất bại:', err);
+      console.warn("OSRM snap thất bại:", err);
       return null;
     }
   }
@@ -777,13 +1147,16 @@ document.addEventListener("DOMContentLoaded", () => {
    * tốc độ đại diện của congestion_level.
    */
   function computeCorridorStats(corridor, distances) {
-    let totalTime = 0, totalDist = 0;
+    let totalTime = 0,
+      totalDist = 0;
     corridor.edges.forEach((e, i) => {
-      const d = distances ? distances[i] : haversine(
-        [e.from.lat, e.from.lng], [e.to.lat, e.to.lng]);
-      const speedNum = parseSpeedKmh(e.speed)
-        ?? CONGESTION_LEVELS[e.congestion_level]?.speed
-        ?? 30;
+      const d = distances
+        ? distances[i]
+        : haversine([e.from.lat, e.from.lng], [e.to.lat, e.to.lng]);
+      const speedNum =
+        parseSpeedKmh(e.speed) ??
+        CONGESTION_LEVELS[e.congestion_level]?.speed ??
+        30;
       totalTime += d / speedNum;
       totalDist += d;
     });
@@ -795,8 +1168,8 @@ document.addEventListener("DOMContentLoaded", () => {
     weight: 7,
     opacity: 0.88,
     smoothFactor: 1.0,
-    lineCap: 'round',
-    lineJoin: 'round'
+    lineCap: "round",
+    lineJoin: "round",
   };
 
   /**
@@ -809,21 +1182,27 @@ document.addEventListener("DOMContentLoaded", () => {
       distances: null,
       totalKm: null,
       avgSpeed: null,
-      maxSpeedLimit: Math.max(...corridor.edges.map(e => e.max_speed_limit || 0)) || null
+      maxSpeedLimit:
+        Math.max(...corridor.edges.map((e) => e.max_speed_limit || 0)) || null,
     };
     mapPolylines.push(entry);
 
     // Vẽ ngay bản dự phòng từng edge (nối from -> to)
-    corridor.edges.forEach(e => {
-      const style = CONGESTION_LEVELS[e.congestion_level] || { color: NO_DATA_COLOR };
+    corridor.edges.forEach((e) => {
+      const style = CONGESTION_LEVELS[e.congestion_level] || {
+        color: NO_DATA_COLOR,
+      };
       const segLine = L.polyline(
-        [[e.from.lat, e.from.lng], [e.to.lat, e.to.lng]],
+        [
+          [e.from.lat, e.from.lng],
+          [e.to.lat, e.to.lng],
+        ],
         {
           ...LINE_STYLE,
           color: style.color,
           weight: routeActive ? 4 : LINE_STYLE.weight,
-          opacity: routeActive ? 0.12 : LINE_STYLE.opacity
-        }
+          opacity: routeActive ? 0.12 : LINE_STYLE.opacity,
+        },
       ).addTo(map);
       entry.segmentLayers.push(segLine);
     });
@@ -832,9 +1211,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Giữ nguyên geometry OSRM đầy đủ để các edge không bị cắt rời thành chấm.
     const distances = [];
-    const snappedList = await Promise.all(corridor.edges.map(e =>
-      snapEdgeGeometry(e.from, e.to)
-    ));
+    const snappedList = await Promise.all(
+      corridor.edges.map((e) => snapEdgeGeometry(e.from, e.to)),
+    );
 
     snappedList.forEach((snapped, i) => {
       const e = corridor.edges[i];
@@ -842,7 +1221,9 @@ document.addEventListener("DOMContentLoaded", () => {
         entry.segmentLayers[i].setLatLngs(snapped.pts);
         distances.push(snapped.distance || polylineLength(snapped.pts));
       } else {
-        distances.push(haversine([e.from.lat, e.from.lng], [e.to.lat, e.to.lng]));
+        distances.push(
+          haversine([e.from.lat, e.from.lng], [e.to.lat, e.to.lng]),
+        );
       }
     });
 
@@ -855,39 +1236,45 @@ document.addEventListener("DOMContentLoaded", () => {
   function bindCorridorEvents(entry) {
     const group = L.featureGroup(entry.segmentLayers);
 
-    group.on('click', () => showCorridorDetail(entry));
+    group.on("click", () => showCorridorDetail(entry));
 
-    group.on('mouseover', () => {
+    group.on("mouseover", () => {
       if (!routeActive) {
-        entry.segmentLayers.forEach(l => l.setStyle({ weight: 11, opacity: 1.0 }));
+        entry.segmentLayers.forEach((l) =>
+          l.setStyle({ weight: 11, opacity: 1.0 }),
+        );
       }
     });
-    group.on('mouseout', () => {
-      entry.segmentLayers.forEach(l => l.setStyle({
-        weight: routeActive ? 4 : 7,
-        opacity: routeActive ? 0.12 : 0.88
-      }));
+    group.on("mouseout", () => {
+      entry.segmentLayers.forEach((l) =>
+        l.setStyle({
+          weight: routeActive ? 4 : 7,
+          opacity: routeActive ? 0.12 : 0.88,
+        }),
+      );
     });
   }
 
   function fmt(n, digits = 1) {
-    return Number(n).toLocaleString('vi-VN', { maximumFractionDigits: digits });
+    return Number(n).toLocaleString("vi-VN", { maximumFractionDigits: digits });
   }
 
   function showCorridorDetail(entry) {
     const corridor = entry.corridor;
     if (!detailDiv) return;
 
-    const rows = corridor.edges.map((e, i) => {
-      const lvl = CONGESTION_LEVELS[e.congestion_level];
-      const distM = entry.distances ? entry.distances[i] : haversine(
-        [e.from.lat, e.from.lng], [e.to.lat, e.to.lng]);
-      const speedTxt = e.speed
-        ? `${e.speed}`
-        : lvl
-          ? `~${lvl.speed} km/h`
-          : "Không có dữ liệu";
-      return `
+    const rows = corridor.edges
+      .map((e, i) => {
+        const lvl = CONGESTION_LEVELS[e.congestion_level];
+        const distM = entry.distances
+          ? entry.distances[i]
+          : haversine([e.from.lat, e.from.lng], [e.to.lat, e.to.lng]);
+        const speedTxt = e.speed
+          ? `${e.speed}`
+          : lvl
+            ? `~${lvl.speed} km/h`
+            : "Không có dữ liệu";
+        return `
         <li style="display:flex; align-items:center; gap:8px; padding:4px 0;">
           <span style="width:14px; height:14px; border-radius:50%; background:${e.color_code || lvl?.color || NO_DATA_COLOR}; flex-shrink:0;"></span>
           <span style="flex:1;">
@@ -897,14 +1284,15 @@ document.addEventListener("DOMContentLoaded", () => {
           <small style="color:#334155; white-space:nowrap;">${speedTxt}</small>
           <small style="color:#64748b;">${fmt(distM / 1000)} km</small>
         </li>`;
-    }).join('');
+      })
+      .join("");
 
     detailDiv.hidden = false;
     detailDiv.innerHTML = `
       <h2 style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">${corridor.corridor_name}</h2>
-      <p style="margin-bottom: 6px;">Vận tốc trung bình: <strong>${entry.avgSpeed ? fmt(entry.avgSpeed) + ' km/h' : 'đang cập nhật...'}</strong></p>
-      <p style="margin-bottom: 6px;">Tổng chiều dài: <strong>${entry.totalKm ? fmt(entry.totalKm) + ' km' : '--'}</strong></p>
-      ${entry.maxSpeedLimit ? `<p style="margin-bottom: 6px;">Giới hạn tốc độ: <strong>${entry.maxSpeedLimit} km/h</strong></p>` : ''}
+      <p style="margin-bottom: 6px;">Vận tốc trung bình: <strong>${entry.avgSpeed ? fmt(entry.avgSpeed) + " km/h" : "đang cập nhật..."}</strong></p>
+      <p style="margin-bottom: 6px;">Tổng chiều dài: <strong>${entry.totalKm ? fmt(entry.totalKm) + " km" : "--"}</strong></p>
+      ${entry.maxSpeedLimit ? `<p style="margin-bottom: 6px;">Giới hạn tốc độ: <strong>${entry.maxSpeedLimit} km/h</strong></p>` : ""}
       <p style="margin-bottom: 4px;">Trạng thái theo từng cung (${corridor.edges.length} cung):</p>
       <ul style="list-style:none; padding:0; margin:0 0 8px 0;">${rows}</ul>
     `;
@@ -934,15 +1322,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // 8. Tìm kiếm theo tên trục / tên đường (client-side trên dữ liệu đã load)
   // ============================================================
   if (roadSearchForm) {
-    roadSearchForm.addEventListener('submit', (e) => {
+    roadSearchForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const query = roadQueryInput.value.trim().toLowerCase();
       if (!query) return;
 
       searchResultsUl.innerHTML = "";
-      const matched = mapPolylines.filter(item =>
-        item.corridor.corridor_name.toLowerCase().includes(query) ||
-        item.corridor.edges.some(e => e.street_name.toLowerCase().includes(query))
+      const matched = mapPolylines.filter(
+        (item) =>
+          item.corridor.corridor_name.toLowerCase().includes(query) ||
+          item.corridor.edges.some((e) =>
+            e.street_name.toLowerCase().includes(query),
+          ),
       );
 
       if (matched.length === 0) {
@@ -950,15 +1341,17 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      matched.forEach(item => {
-        const speedTxt = item.avgSpeed ? ` - <small style="color:#475569">${fmt(item.avgSpeed)} km/h TB</small>` : '';
-        const li = document.createElement('li');
-        li.style.cursor = 'pointer';
-        li.style.padding = '8px 12px';
-        li.style.borderBottom = '1px solid #e2e8f0';
+      matched.forEach((item) => {
+        const speedTxt = item.avgSpeed
+          ? ` - <small style="color:#475569">${fmt(item.avgSpeed)} km/h TB</small>`
+          : "";
+        const li = document.createElement("li");
+        li.style.cursor = "pointer";
+        li.style.padding = "8px 12px";
+        li.style.borderBottom = "1px solid #e2e8f0";
         li.innerHTML = `<strong>${item.corridor.corridor_name}</strong>${speedTxt}`;
 
-        li.addEventListener('click', () => {
+        li.addEventListener("click", () => {
           const bounds = L.featureGroup(item.segmentLayers).getBounds();
           map.fitBounds(bounds);
           showCorridorDetail(item);
@@ -981,19 +1374,21 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
 
   // --- Get popup DOM elements ---
-  const popupOverlay    = document.getElementById("popup-overlay");
-  const popupToggleBtn  = document.getElementById("popup-toggle-btn");
-  const popupCloseBtn   = document.getElementById("popup-close");
-  const popupInfoPage   = document.getElementById("popup-info-page");
-  const popupChartPage  = document.getElementById("popup-chart-page");
-  const popupRoadName   = document.getElementById("popup-road-name");
-  const popupAvgSpeed   = document.getElementById("popup-avg-speed");
-  const popupCongestionLevel = document.getElementById("popup-congestion-level");
+  const popupOverlay = document.getElementById("popup-overlay");
+  const popupToggleBtn = document.getElementById("popup-toggle-btn");
+  const popupCloseBtn = document.getElementById("popup-close");
+  const popupInfoPage = document.getElementById("popup-info-page");
+  const popupChartPage = document.getElementById("popup-chart-page");
+  const popupRoadName = document.getElementById("popup-road-name");
+  const popupAvgSpeed = document.getElementById("popup-avg-speed");
+  const popupCongestionLevel = document.getElementById(
+    "popup-congestion-level",
+  );
   const popupUpdateTime = document.getElementById("popup-update-time");
   const popupShowChartBtn = document.getElementById("popup-show-chart-btn");
-  const popupBackBtn    = document.getElementById("popup-back-btn");
+  const popupBackBtn = document.getElementById("popup-back-btn");
   const popupChartTitle = document.getElementById("popup-chart-title");
-  const popupCanvas     = document.getElementById("popup-chart-canvas");
+  const popupCanvas = document.getElementById("popup-chart-canvas");
 
   // Store current corridor data for chart
   let currentPopupData = null;
@@ -1014,13 +1409,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- Show info page, hide chart ---
   function showInfoPage() {
-    if (popupInfoPage)  popupInfoPage.hidden = false;
+    if (popupInfoPage) popupInfoPage.hidden = false;
     if (popupChartPage) popupChartPage.hidden = true;
   }
 
   // --- Show chart page, hide info ---
   function showChartPage() {
-    if (popupInfoPage)  popupInfoPage.hidden = true;
+    if (popupInfoPage) popupInfoPage.hidden = true;
     if (popupChartPage) popupChartPage.hidden = false;
     // Draw chart if data is available
     if (currentPopupData) {
@@ -1032,8 +1427,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function getCurrentTime() {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
-    return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} `
-         + `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+    return (
+      `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ` +
+      `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`
+    );
   }
 
   // --- Get worst congestion level of a corridor ---
@@ -1050,25 +1447,28 @@ document.addEventListener("DOMContentLoaded", () => {
   function updatePopupContent(entry) {
     const corridor = entry.corridor;
     const levelInfo = getCorridorLevel(corridor);
-    const avgSpeedText = entry.avgSpeed ? fmt(entry.avgSpeed) + " km/h" : "Đang cập nhật...";
+    const avgSpeedText = entry.avgSpeed
+      ? fmt(entry.avgSpeed) + " km/h"
+      : "Đang cập nhật...";
 
     // Save data for chart
     currentPopupData = {
       name: corridor.corridor_name,
       edges: corridor.edges,
       distances: entry.distances,
-      avgSpeed: entry.avgSpeed
+      avgSpeed: entry.avgSpeed,
     };
 
     // Update popup elements
-    if (popupRoadName)  popupRoadName.textContent = corridor.corridor_name;
-    if (popupAvgSpeed)  popupAvgSpeed.textContent = avgSpeedText;
+    if (popupRoadName) popupRoadName.textContent = corridor.corridor_name;
+    if (popupAvgSpeed) popupAvgSpeed.textContent = avgSpeedText;
     if (popupCongestionLevel) {
       popupCongestionLevel.textContent = levelInfo.label;
       popupCongestionLevel.style.color = levelInfo.color;
     }
     if (popupUpdateTime) popupUpdateTime.textContent = getCurrentTime();
-    if (popupChartTitle) popupChartTitle.textContent = "Biểu đồ: " + corridor.corridor_name;
+    if (popupChartTitle)
+      popupChartTitle.textContent = "Biểu đồ: " + corridor.corridor_name;
   }
 
   // --- Draw chart with Chart.js ---
@@ -1080,18 +1480,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Prepare data: each edge = 1 bar
-    const labels = [];       // Road name (X axis)
-    const speeds = [];       // Speed (Y axis)
-    const colors = [];       // Bar color by congestion level
+    const labels = []; // Road name (X axis)
+    const speeds = []; // Speed (Y axis)
+    const colors = []; // Bar color by congestion level
 
     data.edges.forEach((e) => {
       // Short name: "Nguyễn Trãi (N01→N02)"
-      const shortName = e.street_name + " (" + e.from.node_code + "→" + e.to.node_code + ")";
+      const shortName =
+        e.street_name + " (" + e.from.node_code + "→" + e.to.node_code + ")";
       labels.push(shortName);
 
       // Speed
       const speedKmh = parseSpeedKmh(e.speed);
-      speeds.push(speedKmh || CONGESTION_LEVELS[e.congestion_level]?.speed || 0);
+      speeds.push(
+        speedKmh || CONGESTION_LEVELS[e.congestion_level]?.speed || 0,
+      );
 
       // Color by congestion level
       const lvl = CONGESTION_LEVELS[e.congestion_level];
@@ -1104,14 +1507,16 @@ document.addEventListener("DOMContentLoaded", () => {
       type: "bar",
       data: {
         labels: labels,
-        datasets: [{
-          label: "Tốc độ (km/h)",
-          data: speeds,
-          backgroundColor: colors,
-          borderColor: colors.map((c) => c),
-          borderWidth: 1,
-          borderRadius: 6
-        }]
+        datasets: [
+          {
+            label: "Tốc độ (km/h)",
+            data: speeds,
+            backgroundColor: colors,
+            borderColor: colors.map((c) => c),
+            borderWidth: 1,
+            borderRadius: 6,
+          },
+        ],
       },
       options: {
         responsive: true,
@@ -1120,27 +1525,27 @@ document.addEventListener("DOMContentLoaded", () => {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (context) => context.parsed.y + " km/h"
-            }
-          }
+              label: (context) => context.parsed.y + " km/h",
+            },
+          },
         },
         scales: {
           x: {
             ticks: {
               maxRotation: 45,
-              font: { size: 11 }
-            }
+              font: { size: 11 },
+            },
           },
           y: {
             beginAtZero: true,
             title: {
               display: true,
               text: "km/h",
-              font: { weight: "bold" }
-            }
-          }
-        }
-      }
+              font: { weight: "bold" },
+            },
+          },
+        },
+      },
     });
   }
 
