@@ -975,4 +975,210 @@ document.addEventListener("DOMContentLoaded", () => {
       showCorridorDetail(matched[0]);
     });
   }
+
+  // ============================================================
+  // 9. POPUP thông tin đường + biểu đồ Chart.js
+  // ============================================================
+
+  // --- Get popup DOM elements ---
+  const popupOverlay    = document.getElementById("popup-overlay");
+  const popupToggleBtn  = document.getElementById("popup-toggle-btn");
+  const popupCloseBtn   = document.getElementById("popup-close");
+  const popupInfoPage   = document.getElementById("popup-info-page");
+  const popupChartPage  = document.getElementById("popup-chart-page");
+  const popupRoadName   = document.getElementById("popup-road-name");
+  const popupAvgSpeed   = document.getElementById("popup-avg-speed");
+  const popupCongestionLevel = document.getElementById("popup-congestion-level");
+  const popupUpdateTime = document.getElementById("popup-update-time");
+  const popupShowChartBtn = document.getElementById("popup-show-chart-btn");
+  const popupBackBtn    = document.getElementById("popup-back-btn");
+  const popupChartTitle = document.getElementById("popup-chart-title");
+  const popupCanvas     = document.getElementById("popup-chart-canvas");
+
+  // Store current corridor data for chart
+  let currentPopupData = null;
+  // Store Chart.js instance (to destroy before redraw)
+  let currentChart = null;
+
+  // --- Open popup ---
+  function openPopup() {
+    if (popupOverlay) popupOverlay.hidden = false;
+  }
+
+  // --- Close popup ---
+  function closePopup() {
+    if (popupOverlay) popupOverlay.hidden = true;
+    // Reset to info page when closing
+    showInfoPage();
+  }
+
+  // --- Show info page, hide chart ---
+  function showInfoPage() {
+    if (popupInfoPage)  popupInfoPage.hidden = false;
+    if (popupChartPage) popupChartPage.hidden = true;
+  }
+
+  // --- Show chart page, hide info ---
+  function showChartPage() {
+    if (popupInfoPage)  popupInfoPage.hidden = true;
+    if (popupChartPage) popupChartPage.hidden = false;
+    // Draw chart if data is available
+    if (currentPopupData) {
+      drawChart(currentPopupData);
+    }
+  }
+
+  // --- Get current time as "HH:MM:SS DD/MM/YYYY" ---
+  function getCurrentTime() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} `
+         + `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+  }
+
+  // --- Get worst congestion level of a corridor ---
+  function getCorridorLevel(corridor) {
+    let worstLevel = 1;
+    corridor.edges.forEach((e) => {
+      const lvl = e.congestion_level || 1;
+      if (lvl > worstLevel) worstLevel = lvl;
+    });
+    return CONGESTION_LEVELS[worstLevel] || CONGESTION_LEVELS[1];
+  }
+
+  // --- Update popup content with corridor data ---
+  function updatePopupContent(entry) {
+    const corridor = entry.corridor;
+    const levelInfo = getCorridorLevel(corridor);
+    const avgSpeedText = entry.avgSpeed ? fmt(entry.avgSpeed) + " km/h" : "Đang cập nhật...";
+
+    // Save data for chart
+    currentPopupData = {
+      name: corridor.corridor_name,
+      edges: corridor.edges,
+      distances: entry.distances,
+      avgSpeed: entry.avgSpeed
+    };
+
+    // Update popup elements
+    if (popupRoadName)  popupRoadName.textContent = corridor.corridor_name;
+    if (popupAvgSpeed)  popupAvgSpeed.textContent = avgSpeedText;
+    if (popupCongestionLevel) {
+      popupCongestionLevel.textContent = levelInfo.label;
+      popupCongestionLevel.style.color = levelInfo.color;
+    }
+    if (popupUpdateTime) popupUpdateTime.textContent = getCurrentTime();
+    if (popupChartTitle) popupChartTitle.textContent = "Biểu đồ: " + corridor.corridor_name;
+  }
+
+  // --- Draw chart with Chart.js ---
+  function drawChart(data) {
+    // Destroy old chart if exists
+    if (currentChart) {
+      currentChart.destroy();
+      currentChart = null;
+    }
+
+    // Prepare data: each edge = 1 bar
+    const labels = [];       // Road name (X axis)
+    const speeds = [];       // Speed (Y axis)
+    const colors = [];       // Bar color by congestion level
+
+    data.edges.forEach((e) => {
+      // Short name: "Nguyễn Trãi (N01→N02)"
+      const shortName = e.street_name + " (" + e.from.node_code + "→" + e.to.node_code + ")";
+      labels.push(shortName);
+
+      // Speed
+      const speedKmh = parseSpeedKmh(e.speed);
+      speeds.push(speedKmh || CONGESTION_LEVELS[e.congestion_level]?.speed || 0);
+
+      // Color by congestion level
+      const lvl = CONGESTION_LEVELS[e.congestion_level];
+      colors.push(lvl ? lvl.color : NO_DATA_COLOR);
+    });
+
+    // Create bar chart
+    const ctx = popupCanvas.getContext("2d");
+    currentChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Tốc độ (km/h)",
+          data: speeds,
+          backgroundColor: colors,
+          borderColor: colors.map((c) => c),
+          borderWidth: 1,
+          borderRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (context) => context.parsed.y + " km/h"
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxRotation: 45,
+              font: { size: 11 }
+            }
+          },
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: "km/h",
+              font: { weight: "bold" }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // --- Bind events: toggle, close, show chart, back ---
+  if (popupToggleBtn) {
+    popupToggleBtn.addEventListener("click", () => {
+      // If popup is hidden -> open, if visible -> close
+      if (popupOverlay.hidden) {
+        openPopup();
+      } else {
+        closePopup();
+      }
+    });
+  }
+
+  if (popupCloseBtn) {
+    popupCloseBtn.addEventListener("click", closePopup);
+  }
+
+  // Click on overlay (outside popup box) -> close
+  if (popupOverlay) {
+    popupOverlay.addEventListener("click", (e) => {
+      if (e.target === popupOverlay) closePopup();
+    });
+  }
+
+  if (popupShowChartBtn) {
+    popupShowChartBtn.addEventListener("click", showChartPage);
+  }
+
+  if (popupBackBtn) {
+    popupBackBtn.addEventListener("click", showInfoPage);
+  }
+
+  // --- Override showCorridorDetail to auto-update popup ---
+  const _originalShowCorridorDetail = showCorridorDetail;
+  showCorridorDetail = function (entry) {
+    _originalShowCorridorDetail(entry);
+    updatePopupContent(entry);
+  };
 });

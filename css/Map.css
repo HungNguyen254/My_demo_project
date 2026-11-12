@@ -465,6 +465,172 @@
   }
 }
 
+/* ===== NÚT ẨN/HIỆN POPUP ===== */
+.popup-toggle-btn {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 1100;
+  padding: 12px 20px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(31, 95, 191, 0.35);
+  transition: background 200ms, transform 200ms;
+}
+
+.popup-toggle-btn:hover {
+  background: #174a96;
+  transform: translateY(-2px);
+}
+
+/* ===== LỚP PHỦ MỜ POPUP ===== */
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.popup-overlay[hidden] {
+  display: none;
+}
+
+/* ===== HỘP POPUP ===== */
+.popup-box {
+  position: relative;
+  width: 460px;
+  max-width: 92vw;
+  max-height: 85vh;
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 28px 28px 24px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  overflow-y: auto;
+  animation: popup-in 250ms ease;
+}
+
+@keyframes popup-in {
+  from { opacity: 0; transform: scale(0.92) translateY(16px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Nút đóng */
+.popup-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.popup-close:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Trang trong popup */
+.popup-page[hidden] {
+  display: none;
+}
+
+/* Tiêu đề */
+.popup-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 18px;
+  padding-right: 32px;
+  color: var(--text);
+}
+
+/* Hàng thông tin */
+.popup-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+
+.popup-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.popup-value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Nút xem biểu đồ */
+.popup-chart-btn {
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 200ms;
+}
+
+.popup-chart-btn:hover {
+  background: #174a96;
+}
+
+/* Nút quay lại */
+.popup-back-btn {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 6px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.popup-back-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* Khung biểu đồ */
+.popup-chart-wrap {
+  width: 100%;
+  height: 280px;
+  position: relative;
+}
+
+.popup-chart-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 2.4s; }
+  .popup-box { animation: none; }
 }
