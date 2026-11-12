@@ -102,6 +102,51 @@
 
   </div>
 
+  <!-- ===== TOGGLE POPUP BUTTON ===== -->
+  <button class="popup-toggle-btn" id="popup-toggle-btn" type="button" title="View road info">
+     Thông tin đường
+  </button>
+
+  <!-- ===== ROAD INFO POPUP ===== -->
+  <div class="popup-overlay" id="popup-overlay" hidden>
+    <div class="popup-box" id="popup-box">
+
+      <!-- Close button -->
+      <button class="popup-close" id="popup-close" type="button" title="Close">✕</button>
+
+      <!-- PAGE 1: Road information -->
+      <div class="popup-page" id="popup-info-page">
+        <h2 class="popup-title" id="popup-road-name">-- Chọn một tuyến đường --</h2>
+        <div class="popup-row">
+          <span class="popup-label">Tốc độ trung bình:</span>
+          <span class="popup-value" id="popup-avg-speed">-- km/h</span>
+        </div>
+        <div class="popup-row">
+          <span class="popup-label">Mức độ:</span>
+          <span class="popup-value" id="popup-congestion-level">--</span>
+        </div>
+        <div class="popup-row">
+          <span class="popup-label">Thời gian cập nhật:</span>
+          <span class="popup-value" id="popup-update-time">--</span>
+        </div>
+        <button class="popup-chart-btn" id="popup-show-chart-btn" type="button">Xem biểu đồ</button>
+      </div>
+
+      <!-- PAGE 2: Chart.js chart -->
+      <div class="popup-page" id="popup-chart-page" hidden>
+        <button class="popup-back-btn" id="popup-back-btn" type="button">← Quay lại</button>
+        <h2 class="popup-title" id="popup-chart-title">Biểu đồ tốc độ</h2>
+        <div class="popup-chart-wrap">
+          <canvas id="popup-chart-canvas"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
   <!-- Leaflet JS, sau đó đến script của trang -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
