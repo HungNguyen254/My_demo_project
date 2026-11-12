@@ -29,12 +29,28 @@ document.addEventListener("DOMContentLoaded", () => {
   const NO_DATA_COLOR = "#94a3b8";
 
   // ============================================================
-  // 2. Cấu hình API - khi backend sẵn sàng chỉ cần đổi BASE_URL
+  // 2. Cấu hình API - đọc toàn bộ từ .env (biến có prefix VITE_)
+  //    KHÔNG hardcode bất kỳ URL nào ở đây để tránh lộ cấu hình.
   // ============================================================
   const ENV = import.meta.env;
-  const API_BASE_URL = ENV.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
-  const ROUTING_BASE_URL =
-    ENV.VITE_ROUTING_URL || "https://router.project-osrm.org/route/v1/driving";
+
+  function requireEnv(name) {
+    const value = ENV[name];
+    if (!value) {
+      throw new Error(
+        `Thiếu cấu hình ${name} trong file .env của FE. ` +
+          `Hãy copy .env.example thành .env và điền giá trị.`,
+      );
+    }
+    return value;
+  }
+
+  const API_BASE_URL = requireEnv("VITE_API_BASE_URL");
+  const ROUTING_BASE_URL = requireEnv("VITE_ROUTING_URL");
+  const TILE_URL = requireEnv("VITE_TILE_URL");
+  const TILE_ATTRIBUTION = ENV.VITE_TILE_ATTRIBUTION || "";
+  const GEOCODER_URL = requireEnv("VITE_GEOCODER_URL");
+  const SEARCH_VIEWBOX = requireEnv("VITE_SEARCH_VIEWBOX");
 
   /**
    * Lớp Client gọi API theo ERD.
@@ -604,14 +620,10 @@ document.addEventListener("DOMContentLoaded", () => {
   map.createPane("routeMarkerPane");
   map.getPane("routeMarkerPane").style.zIndex = "660";
 
-  const tileLayer = L.tileLayer(
-    ENV.VITE_TILE_URL || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {
-      maxZoom: 19,
-      attribution:
-        ENV.VITE_TILE_ATTRIBUTION || "&copy; OpenStreetMap contributors",
-    },
-  );
+  const tileLayer = L.tileLayer(TILE_URL, {
+    maxZoom: 19,
+    attribution: TILE_ATTRIBUTION,
+  });
   tileLayer.addTo(map);
 
   tileLayer.on("load", () => {
@@ -648,14 +660,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const delay = Math.max(0, 1000 - (Date.now() - lastGeocodeRequestAt));
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
 
-    const geocoderUrl =
-      ENV.VITE_GEOCODER_URL || "https://nominatim.openstreetmap.org/search";
+    const geocoderUrl = GEOCODER_URL;
     const params = new URLSearchParams({
       format: "jsonv2",
       limit: "1",
       countrycodes: "vn",
       bounded: "1",
-      viewbox: ENV.VITE_SEARCH_VIEWBOX || "105.3,21.5,106.1,20.5",
+      viewbox: SEARCH_VIEWBOX,
       q: `${query}, Hà Nội, Việt Nam`,
     });
     const response = await fetchWithTimeout(`${geocoderUrl}?${params}`);

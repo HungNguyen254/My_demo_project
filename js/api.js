@@ -4,9 +4,22 @@
 // => mọi hàm đều trả về phần `data`.
 
 // Cấu hình từ file .env (Vite tự nạp qua dotenv, expose biến có prefix VITE_)
+// KHÔNG hardcode URL ở đây để tránh lộ thông tin cấu hình trong source.
 const ENV = import.meta.env;
-export const API_BASE_URL =
-  ENV.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+
+function requireEnv(name) {
+  const value = ENV[name];
+  if (!value) {
+    throw new Error(
+      `Thiếu cấu hình ${name} trong file .env của FE. ` +
+        `Hãy copy .env.example thành .env và điền giá trị.`,
+    );
+  }
+  return value;
+}
+
+export const API_BASE_URL = requireEnv("VITE_API_BASE_URL");
+export const API_HEALTH_URL = requireEnv("VITE_API_HEALTH_URL");
 
 const TOKEN_KEY = "traffic_token";
 const USER_KEY = "traffic_user";
@@ -77,8 +90,7 @@ export async function request(
 
 /** Health check nằm ngoài prefix /v1 */
 export async function checkHealth() {
-  const healthUrl =
-    ENV.VITE_API_HEALTH_URL || "http://127.0.0.1:8000/api/health";
+  const healthUrl = API_HEALTH_URL;
   const res = await fetch(healthUrl);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const envelope = await res.json();
