@@ -57,5 +57,5 @@ function initRetrain() {
 
 document.getElementById("logout-btn")?.addEventListener("click", () => {
   clearSession();
-  window.location.href = "main.html";
+  window.location.replace("main.html");
 });

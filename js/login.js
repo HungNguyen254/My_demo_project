@@ -3,26 +3,51 @@
 
 import {
   clearSession,
-  getToken,
   isLoggedIn,
-  isAdmin,
   request,
   saveSession,
 } from "./api.js";
+
+function getPasswordValidationMessage(password) {
+  if (password.length < 6) return "Mật khẩu phải có ít nhất 6 ký tự.";
+  if (!/\p{Lu}/u.test(password)) {
+    return "Mật khẩu phải có ít nhất 1 ký tự viết hoa.";
+  }
+  if (!/\p{Nd}/u.test(password)) {
+    return "Mật khẩu phải có ít nhất 1 chữ số.";
+  }
+  if (!/[^\p{L}\p{N}]/u.test(password)) {
+    return "Mật khẩu phải có ít nhất 1 ký tự đặc biệt.";
+  }
+  return "";
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   const tabLogin = document.getElementById("tab-login");
   const tabRegister = document.getElementById("tab-register");
   const loginForm = document.getElementById("login-form");
   const registerForm = document.getElementById("register-form");
+  const changePasswordForm = document.getElementById("change-password-form");
   const mePanel = document.getElementById("me-panel");
+  const logoutButton = document.getElementById("logout-btn");
+  const tabContainer = tabLogin.parentElement;
+
+  logoutButton.addEventListener("click", () => {
+    clearSession();
+    window.location.replace("main.html");
+  });
 
   // Đã đăng nhập -> hiện panel "tài khoản của tôi"
   if (isLoggedIn()) {
+    tabLogin.textContent = "Tài khoản";
+    tabRegister.textContent = "Đổi mật khẩu";
+    tabContainer.hidden = false;
     loginForm.hidden = true;
     registerForm.hidden = true;
-    tabLogin.parentElement.hidden = true;
-    mePanel.hidden = false;
+    tabLogin.addEventListener("click", () => switchAccountTab(true));
+    tabRegister.addEventListener("click", () => switchAccountTab(false));
+    switchAccountTab(true);
+    initChangePassword();
     loadMe();
     return;
   }
@@ -36,6 +61,9 @@ document.addEventListener("DOMContentLoaded", () => {
     tabRegister.classList.toggle("active", !showLogin);
     loginForm.hidden = !showLogin;
     registerForm.hidden = showLogin;
+    changePasswordForm.hidden = true;
+    mePanel.hidden = true;
+    logoutButton.hidden = true;
   }
 
   // ---- Đăng nhập ----
@@ -72,6 +100,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const fullName = document.getElementById("reg-fullname").value.trim();
     const email = document.getElementById("reg-email").value.trim();
     const password = document.getElementById("reg-password").value;
+    const passwordError = getPasswordValidationMessage(password);
+    if (passwordError) {
+      message.style.color = "#dc2626";
+      message.textContent = `❌ ${passwordError}`;
+      return;
+    }
     message.textContent = "Đang xử lý...";
     message.style.color = "";
 
@@ -89,6 +123,60 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  function switchAccountTab(showAccount) {
+    tabLogin.classList.toggle("active", showAccount);
+    tabRegister.classList.toggle("active", !showAccount);
+    mePanel.hidden = !showAccount;
+    changePasswordForm.hidden = showAccount;
+    logoutButton.hidden = !showAccount;
+  }
+
+  function initChangePassword() {
+    changePasswordForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = document.getElementById("change-password-message");
+      const currentPassword = document.getElementById("current-password").value;
+      const newPassword = document.getElementById("new-password").value;
+      const confirmPassword = document.getElementById("confirm-password").value;
+      const submitButton = changePasswordForm.querySelector('button[type="submit"]');
+
+      const passwordError = getPasswordValidationMessage(newPassword);
+      if (passwordError) {
+        message.style.color = "#dc2626";
+        message.textContent = `❌ ${passwordError}`;
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        message.style.color = "#dc2626";
+        message.textContent = "❌ Mật khẩu nhập lại không khớp.";
+        return;
+      }
+
+      submitButton.disabled = true;
+      message.style.color = "";
+      message.textContent = "Đang cập nhật mật khẩu...";
+      try {
+        await request("/auth/change-password", {
+          method: "POST",
+          body: {
+            current_password: currentPassword,
+            new_password: newPassword,
+          },
+          auth: true,
+        });
+        changePasswordForm.reset();
+        message.style.color = "#16a34a";
+        message.textContent = "✅ Đổi mật khẩu thành công.";
+      } catch (err) {
+        message.style.color = "#dc2626";
+        message.textContent = `❌ ${err.message}`;
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  }
+
   // ---- Lấy thông tin tài khoản (GET /auth/me) ----
   async function loadMe() {
     try {
@@ -101,17 +189,11 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("me-created").textContent = new Date(
         user.created_at,
       ).toLocaleDateString("vi-VN");
-      if (isAdmin()) document.getElementById("me-admin-link").hidden = false;
+      document.getElementById("me-admin-link").hidden = user.role !== "admin";
     } catch (err) {
       // Token hết hạn -> về form đăng nhập
       clearSession();
       window.location.reload();
     }
   }
-
-  // ---- Đăng xuất ----
-  document.getElementById("logout-btn")?.addEventListener("click", () => {
-    clearSession();
-    window.location.href = "main.html";
-  });
 });

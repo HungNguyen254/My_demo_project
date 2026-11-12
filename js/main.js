@@ -4,31 +4,130 @@
 import { checkHealth, isAdmin, isLoggedIn, request } from "./api.js";
 
 const CONGESTION_MAP = {
-  1: { textClass: "text-green",   label: "Thông thoáng" },
-  2: { textClass: "text-yellow",  label: "Di chuyển chậm" },
-  3: { textClass: "text-red",     label: "Ùn tắc nghiêm trọng" },
-  4: { textClass: "text-darkred", label: "Kẹt xe hoàn toàn" }
+  1: { textClass: "text-green", label: "Thông thoáng", speed: 45 },
+  2: { textClass: "text-yellow", label: "Di chuyển chậm", speed: 22 },
+  3: { textClass: "text-red", label: "Ùn tắc nghiêm trọng", speed: 11 },
+  4: { textClass: "text-darkred", label: "Kẹt xe hoàn toàn", speed: 4 },
 };
 
 document.addEventListener("DOMContentLoaded", () => {
   updateNav();
   initBackendConnection();
   initForecastForm();
-  initStreetAutocomplete();
-  initHeroStats();
+  initTrafficData();
 });
 
-/** Nạp danh sách tên tuyến đường vào datalist gợi ý cho form dự báo. */
-async function initStreetAutocomplete() {
-  const datalist = document.getElementById("street-list");
-  if (!datalist) return;
+function parseSpeedKmh(value) {
+  const speed =
+    typeof value === "number"
+      ? value
+      : Number.parseFloat(String(value ?? "").replace(",", "."));
+  return Number.isFinite(speed) && speed > 0 ? speed : null;
+}
+
+function getTrafficLevel(edge) {
+  const declaredLevel = Number(edge.congestion_level);
+  if (CONGESTION_MAP[declaredLevel]) return declaredLevel;
+
+  const speed = parseSpeedKmh(edge.speed);
+  if (speed === null) return null;
+  if (speed >= 35) return 1;
+  if (speed >= 25) return 2;
+  if (speed >= 15) return 3;
+  return 4;
+}
+
+async function initTrafficData() {
+  const status = document.getElementById("hotspot-status");
   try {
     const data = await request("/edges");
-    const names = [...new Set((data?.edges || []).map((e) => e.street_name).filter(Boolean))];
-    datalist.innerHTML = names.map((n) => `<option value="${n}"></option>`).join("");
-  } catch {
-    /* Không có autocomplete cũng không chặn việc nhập tay */
+    const edges = Array.isArray(data?.edges)
+      ? data.edges
+      : Array.isArray(data)
+        ? data
+        : [];
+    initStreetAutocomplete(edges);
+    renderHotspots(edges);
+    initHeroStats(edges);
+  } catch (err) {
+    status.textContent = `Không tải được dữ liệu giao thông: ${err.message}`;
+    status.style.color = "#dc2626";
   }
+}
+
+/** Nạp tên tuyến đường vào datalist gợi ý cho form dự báo. */
+function initStreetAutocomplete(edges) {
+  const datalist = document.getElementById("street-list");
+  if (!datalist) return;
+  const names = [...new Set(edges.map((edge) => edge.street_name).filter(Boolean))];
+  datalist.replaceChildren(
+    ...names.map((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      return option;
+    }),
+  );
+}
+
+function renderHotspots(edges) {
+  const grid = document.getElementById("hotspot-grid");
+  const status = document.getElementById("hotspot-status");
+  const hotspots = edges
+    .map((edge) => ({ edge, level: getTrafficLevel(edge) }))
+    .filter(({ level }) => level !== null && level >= 2)
+    .sort((a, b) => {
+      if (a.level !== b.level) return b.level - a.level;
+      return (
+        (parseSpeedKmh(a.edge.speed) ?? Number.POSITIVE_INFINITY) -
+        (parseSpeedKmh(b.edge.speed) ?? Number.POSITIVE_INFINITY)
+      );
+    })
+    .slice(0, 6);
+
+  grid.replaceChildren();
+  if (!hotspots.length) {
+    status.textContent = "Hiện chưa ghi nhận đoạn đường di chuyển chậm hoặc ùn tắc.";
+    status.style.color = "";
+    return;
+  }
+
+  status.textContent = `Đang hiển thị ${hotspots.length} đoạn đường có mật độ cao nhất theo dữ liệu bản đồ.`;
+  status.style.color = "";
+  hotspots.forEach(({ edge, level }) => {
+    const info = CONGESTION_MAP[level];
+    const card = document.createElement("article");
+    card.className = "card hotspot-card";
+
+    const title = document.createElement("h3");
+    title.textContent = edge.corridor_name || edge.street_name || "Tuyến đường";
+    card.appendChild(title);
+
+    if (edge.from?.node_name || edge.to?.node_name) {
+      const segment = document.createElement("p");
+      segment.className = "hotspot-segment";
+      segment.textContent = [edge.from?.node_name, edge.to?.node_name]
+        .filter(Boolean)
+        .join(" → ");
+      card.appendChild(segment);
+    }
+
+    const levelLabel = document.createElement("p");
+    levelLabel.className = `level-label hotspot-index ${info.textClass}`;
+    levelLabel.textContent = info.label;
+    card.appendChild(levelLabel);
+
+    const speed = parseSpeedKmh(edge.speed);
+    if (speed !== null) {
+      const speedLabel = document.createElement("p");
+      speedLabel.className = "hotspot-speed";
+      speedLabel.textContent = `${new Intl.NumberFormat("vi-VN", {
+        maximumFractionDigits: 1,
+      }).format(speed)} km/h`;
+      card.appendChild(speedLabel);
+    }
+
+    grid.appendChild(card);
+  });
 }
 
 /** Hiện "Quản trị" khi là admin, đổi "Đăng nhập" thành "Tài khoản" khi đã đăng nhập. */
@@ -149,31 +248,44 @@ function renderForecast(data) {
   resultBox.hidden = false;
 }
 
-/**
- * 3. Thống kê nhanh ở hero: đếm số tuyến/điểm nóng ùn tắc từ dữ liệu tĩnh
- *    (backend chưa có endpoint hotspots, dùng danh sách điểm nóng hiện có).
- */
-function initHeroStats() {
-  const cards = document.querySelectorAll("#hotspot-grid .hotspot-card");
-  if (!cards.length) return;
+/** Thống kê nhanh được tính từ cùng các edge đang tô màu trên bản đồ. */
+function initHeroStats(edges) {
+  const corridors = new Map();
+  let totalDistance = 0;
+  let totalTravelTime = 0;
 
-  let congested = 0;
-  let totalSpeed = 0;
-  const SPEED_BY_LEVEL = { 1: 45, 2: 22, 3: 11, 4: 4 };
+  edges.forEach((edge) => {
+    const corridorName = edge.corridor_name || edge.street_name || edge.edge_code;
+    const level = getTrafficLevel(edge);
+    const corridorLevel = corridors.get(corridorName) ?? 0;
+    corridors.set(
+      corridorName,
+      level === null ? corridorLevel : Math.max(corridorLevel, level),
+    );
 
-  cards.forEach((card) => {
-    const text = card.querySelector(".hotspot-index")?.textContent || "";
-    const level = text.includes("hoàn toàn") ? 4
-      : text.includes("nghiêm trọng") ? 3
-      : text.includes("chậm") ? 2 : 1;
-    if (level >= 3) congested++;
-    totalSpeed += SPEED_BY_LEVEL[level];
+    const speed = parseSpeedKmh(edge.speed) ??
+      (level === null ? null : CONGESTION_MAP[level].speed);
+    if (speed === null) return;
+    const rawDistance = Number(edge.length_km);
+    const distance = Number.isFinite(rawDistance) && rawDistance > 0
+      ? rawDistance
+      : 1;
+    totalDistance += distance;
+    totalTravelTime += distance / speed;
   });
 
-  const edges = document.getElementById("stat-edges");
-  const cong = document.getElementById("stat-congested");
-  const avg = document.getElementById("stat-avg");
-  if (edges) edges.textContent = "59";       // số nút giao trọng điểm đang mock
-  if (cong) cong.textContent = String(congested);
-  if (avg) avg.textContent = `${Math.round(totalSpeed / cards.length)} km/h`;
+  const corridorCount = document.getElementById("stat-edges");
+  const congested = document.getElementById("stat-congested");
+  const average = document.getElementById("stat-avg");
+  if (corridorCount) corridorCount.textContent = String(corridors.size);
+  if (congested) {
+    congested.textContent = String(
+      [...corridors.values()].filter((level) => level >= 3).length,
+    );
+  }
+  if (average) {
+    average.textContent = totalTravelTime
+      ? `${Math.round(totalDistance / totalTravelTime)} km/h`
+      : "--";
+  }
 }

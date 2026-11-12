@@ -30,7 +30,7 @@
       <section class="hero" id="home">
         <div class="hero-stats">
           <div class="stat">
-            <strong id="stat-edges">--</strong><span>Tuyến đang theo dõi</span>
+            <strong id="stat-edges">--</strong><span>Trục đường theo dõi</span>
           </div>
           <div class="stat">
             <strong id="stat-congested">--</strong
@@ -116,46 +116,16 @@
 
       <!-- ===== ĐIỂM NÓNG ===== -->
       <section class="section section-gray" id="hotspots">
-        <h2>Điểm nóng ùn tắc hôm nay</h2>
+        <h2>Điểm nóng ùn tắc hiện tại</h2>
         <p class="section-desc">
-          Mức độ ùn tắc tại các nút giao trọng điểm — trùng với các nút giao
-          hiển thị trên <a href="Map.html">trang Bản đồ</a>.
+          Các đoạn ùn tắc nhất được lấy từ cùng dữ liệu và mức màu đang hiển thị
+          trên <a href="Map.html">trang Bản đồ</a>.
         </p>
 
-        <div class="grid" id="hotspot-grid">
-          <article class="card hotspot-card">
-            <h3>Ngã Tư Sở</h3>
-            <p class="level-label hotspot-index text-darkred">
-              Kẹt xe hoàn toàn
-            </p>
-          </article>
-          <article class="card hotspot-card">
-            <h3>Nút giao Khuất Duy Tiến - Nguyễn Trãi</h3>
-            <p class="level-label hotspot-index text-darkred">
-              Kẹt xe hoàn toàn
-            </p>
-          </article>
-          <article class="card hotspot-card">
-            <h3>Nút giao Trần Duy Hưng</h3>
-            <p class="level-label hotspot-index text-red">
-              Ùn tắc nghiêm trọng
-            </p>
-          </article>
-          <article class="card hotspot-card">
-            <h3>Ngã tư Cầu Giấy</h3>
-            <p class="level-label hotspot-index text-red">
-              Ùn tắc nghiêm trọng
-            </p>
-          </article>
-          <article class="card hotspot-card">
-            <h3>Hầm chui Kim Liên</h3>
-            <p class="level-label hotspot-index text-green">Thông thoáng</p>
-          </article>
-          <article class="card hotspot-card">
-            <h3>Đường Phạm Hùng (Mễ Trì)</h3>
-            <p class="level-label hotspot-index text-green">Thông thoáng</p>
-          </article>
-        </div>
+        <p id="hotspot-status" class="hotspot-status" role="status" aria-live="polite">
+          Đang tải dữ liệu giao thông...
+        </p>
+        <div class="grid" id="hotspot-grid"></div>
       </section>
 
       <!-- ===== CÁCH HOẠT ĐỘNG ===== -->
