@@ -14,8 +14,22 @@ document.addEventListener("DOMContentLoaded", () => {
   updateNav();
   initBackendConnection();
   initForecastForm();
+  initStreetAutocomplete();
   initHeroStats();
 });
+
+/** Nạp danh sách tên tuyến đường vào datalist gợi ý cho form dự báo. */
+async function initStreetAutocomplete() {
+  const datalist = document.getElementById("street-list");
+  if (!datalist) return;
+  try {
+    const data = await request("/edges");
+    const names = [...new Set((data?.edges || []).map((e) => e.street_name).filter(Boolean))];
+    datalist.innerHTML = names.map((n) => `<option value="${n}"></option>`).join("");
+  } catch {
+    /* Không có autocomplete cũng không chặn việc nhập tay */
+  }
+}
 
 /** Hiện "Quản trị" khi là admin, đổi "Đăng nhập" thành "Tài khoản" khi đã đăng nhập. */
 function updateNav() {
@@ -82,6 +96,7 @@ function initForecastForm() {
         },
       });
       renderForecast(data);
+      statusEl.style.color = "";
       statusEl.textContent = `Dự báo thành công cho tuyến "${data.street_name}".`;
     } catch (err) {
       resultBox.hidden = true;
