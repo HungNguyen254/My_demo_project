@@ -1,0 +1,6 @@
+import"./main-Bs69Nqel.js";import{a as e,i as t,n,r,s as i}from"./api-DN4kxLie.js";document.addEventListener(`DOMContentLoaded`,()=>{!r()||!e()?document.querySelector(`.admin-main .section`).innerHTML=`
+      <div class="card admin-card">
+        <h2>⛔ Không có quyền truy cập</h2>
+        <p>Trang này chỉ dành cho quản trị viên. Hãy <a href="login.html">đăng nhập</a> bằng tài khoản admin.</p>
+      </div>
+    `:(a(),o())});function a(){let e=t();document.getElementById(`st-logged`).textContent=e?`Có`:`Không`,document.getElementById(`st-email`).textContent=e?.user_id||`--`,document.getElementById(`st-role`).textContent=e?.role===`admin`?`Quản trị viên`:e?.role||`--`}function o(){let e=document.getElementById(`retrain-btn`),t=document.getElementById(`retrain-message`);e&&t&&e.addEventListener(`click`,async()=>{e.disabled=!0,e.textContent=`Đang gửi yêu cầu...`,t.textContent=``,t.style.color=``;try{let e=await i(`/admin/retrain-model`,{method:`POST`,auth:!0});t.style.color=`#16a34a`,t.textContent=`✅ ${e.message||`Backend đã tiếp nhận yêu cầu huấn luyện trong tiến trình ngầm.`}`}catch(e){t.style.color=`#dc2626`,t.textContent=`❌ ${e.message}`}finally{e.disabled=!1,e.textContent=`Huấn luyện lại mô hình`}})}document.getElementById(`logout-btn`)?.addEventListener(`click`,()=>{n(),window.location.replace(`main.html`)});
