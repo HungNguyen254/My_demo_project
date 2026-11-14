@@ -15,7 +15,66 @@ document.addEventListener("DOMContentLoaded", () => {
   initBackendConnection();
   initForecastForm();
   initTrafficData();
+  applyAuthGate();
 });
+
+/**
+ * Khóa chức năng cho khách chưa đăng nhập:
+ *  - ẩn phần dự báo AI, hiện màn hình đăng ký/đăng nhập
+ *  - mọi link vào Bản đồ đều mở popup yêu cầu đăng nhập thay vì chuyển trang
+ */
+function applyAuthGate() {
+  const loggedIn = isLoggedIn();
+
+  if (!loggedIn) {
+    // Ẩn form dự báo, hiện màn hình khóa
+    const forecastSection = document.getElementById("forecast");
+    const gate = document.getElementById("forecast-auth-gate");
+    if (forecastSection) forecastSection.hidden = false; // hiện section
+    const forecastForm = document.getElementById("forecast-form");
+    if (forecastForm) forecastForm.hidden = true;
+    if (gate) gate.hidden = false;
+
+    // Chặn mọi link dẫn tới Map.html -> mở popup yêu cầu đăng nhập
+    document.querySelectorAll('a[href$="Map.html"]').forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        openLoginRequiredPopup();
+      });
+    });
+  }
+}
+
+/** Popup yêu cầu đăng nhập/đăng ký khi bấm vào Bản đồ mà chưa có tài khoản */
+function openLoginRequiredPopup() {
+  let overlay = document.getElementById("login-required-overlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "login-required-overlay";
+    overlay.className = "popup-overlay-login";
+    overlay.innerHTML = `
+      <div class="popup-box-login" role="dialog" aria-modal="true" aria-labelledby="login-required-title">
+        <button class="popup-close-login" type="button" aria-label="Đóng">✕</button>
+        <div class="popup-icon-login">🔒</div>
+        <h2 id="login-required-title">Cần đăng nhập để xem bản đồ</h2>
+        <p>
+          Bản đồ giao thông và tính năng chỉ đường chỉ dành cho thành viên.
+          Hãy đăng nhập hoặc đăng ký tài khoản miễn phí để tiếp tục.
+        </p>
+        <div class="popup-actions-login">
+          <a class="btn" href="login.html">Đăng nhập</a>
+          <a class="btn btn-outline" href="login.html?tab=register">Đăng ký</a>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) overlay.remove();
+    });
+    overlay.querySelector(".popup-close-login").addEventListener("click", () => overlay.remove());
+  }
+}
 
 function parseSpeedKmh(value) {
   const speed =

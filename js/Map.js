@@ -10,6 +10,39 @@ document.addEventListener("DOMContentLoaded", () => {
   // 1. Mapping congestion_level (1..4) <-> màu / nhãn / tốc độ
   //    Khớp TrafficRecords.congestion_level + color_code trong ERD
   // ============================================================
+  // ============================================================
+  // 0. KHÓA TRUY CẬP: chưa đăng nhập -> hiện màn hình khóa + chuyển về login
+  //    (Map.js là ES module nên chạy sau DOM sẵn sàng)
+  // ============================================================
+  function isLoggedInLocal() {
+    try {
+      return Boolean(localStorage.getItem("traffic_token"));
+    } catch {
+      return false;
+    }
+  }
+
+  if (!isLoggedInLocal()) {
+    document.body.innerHTML = `
+      <div class="map-auth-gate">
+        <div class="map-auth-gate-box" role="dialog" aria-modal="true">
+          <div class="map-auth-gate-icon">🔒</div>
+          <h1>Cần đăng nhập để xem bản đồ</h1>
+          <p>
+            Bản đồ giao thông và tính năng chỉ đường chỉ dành cho thành viên.
+            Hãy đăng nhập hoặc đăng ký tài khoản miễn phí để tiếp tục.
+          </p>
+          <div class="map-auth-gate-actions">
+            <a class="btn" href="login.html">Đăng nhập</a>
+            <a class="btn btn-outline" href="login.html?tab=register">Đăng ký</a>
+            <a class="map-auth-gate-back" href="main.html">← Về trang chủ</a>
+          </div>
+        </div>
+      </div>
+    `;
+    return; // không khởi tạo bản đồ
+  }
+
   const CONGESTION_LEVELS = {
     1: { key: "green", color: "#22c55e", label: "Thông thoáng", speed: 45 }, // > 30 km/h
     2: { key: "yellow", color: "#eab308", label: "Di chuyển chậm", speed: 22 }, // 15-30 km/h
@@ -819,7 +852,8 @@ document.addEventListener("DOMContentLoaded", () => {
           routeDistance.textContent = `${fmt(route.distance / 1000, 2)} km`;
         updateRouteDuration();
         if (routeSummary) routeSummary.hidden = false;
-        if (detailDiv) detailDiv.hidden = true;
+        // Hiện thông tin các đường đi qua + cập nhật popup thông tin đường
+        showRouteRoadInfo(routePoints, originName, destinationName, route.distance, trafficSegments);
         setRouteStatus(`${originName} → ${destinationName}`);
       } catch (error) {
         if (requestId !== routeRequestId) return;
@@ -863,7 +897,113 @@ document.addEventListener("DOMContentLoaded", () => {
       if (routeSummary) routeSummary.hidden = true;
       if (detailDiv) detailDiv.hidden = true;
       setRouteStatus("Đã hủy tuyến. Bản đồ đã trở lại chế độ xem bình thường.");
+      if (popupOverlay) popupOverlay.hidden = true;
     });
+  }
+
+  // ============================================================
+  // Hiện thông tin các đường đi qua khi vẽ tuyến đường:
+  //   - quét corridor gần tuyến (bán kính 150m)
+  //   - gộp thành entry ảo rồi gọi showCorridorDetail + updatePopupContent
+  // ============================================================
+  function collectCorridorsAlongRoute(routePoints, radiusMeters = 150) {
+    const matched = [];
+
+    routePoints.forEach((point) => {
+      mapPolylines.forEach((entry) => {
+        if (matched.includes(entry)) return;
+        let isNear = false;
+        entry.corridor.edges.forEach((edge, edgeIndex) => {
+          if (isNear) return;
+          const layer = entry.segmentLayers[edgeIndex];
+          if (!layer) return;
+          const roadPoints = layer.getLatLngs();
+          for (let i = 1; i < roadPoints.length && !isNear; i++) {
+            const distance = distToSegment(
+              point,
+              [roadPoints[i - 1].lat, roadPoints[i - 1].lng],
+              [roadPoints[i].lat, roadPoints[i].lng],
+            );
+            if (distance <= radiusMeters) isNear = true;
+          }
+        });
+        if (isNear) matched.push(entry);
+      });
+    });
+    return matched;
+  }
+
+  function showRouteRoadInfo(
+    routePoints,
+    originName,
+    destinationName,
+    routeDistanceMeters,
+    trafficSegments,
+  ) {
+    const matchedEntries = collectCorridorsAlongRoute(routePoints);
+    if (!detailDiv && !popupOverlay) return;
+
+    if (!matchedEntries.length) {
+      // Không có dữ liệu giao thông nào dọc tuyến -> vẫn hiện thông tin cơ bản
+      if (detailDiv) {
+        detailDiv.hidden = false;
+        detailDiv.innerHTML = `
+          <h2 style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">${originName} → ${destinationName}</h2>
+          <p style="margin-bottom: 6px;">Quãng đường: <strong>${fmt(routeDistanceMeters / 1000, 2)} km</strong></p>
+          <p style="color:#64748b;">Không có dữ liệu giao thông nào dọc tuyến này.</p>
+        `;
+      }
+      return;
+    }
+
+    // Gộp các edge của mọi corridor dọc tuyến thành 1 entry ảo
+    const combinedEdges = [];
+    const combinedDistances = [];
+    matchedEntries.forEach((entry) => {
+      entry.corridor.edges.forEach((edge, i) => {
+        combinedEdges.push(edge);
+        combinedDistances.push(
+          entry.distances
+            ? entry.distances[i]
+            : haversine([edge.from.lat, edge.from.lng], [edge.to.lat, edge.to.lng]),
+        );
+      });
+    });
+
+    const routeEntry = {
+      corridor: {
+        corridor_name: `${originName} → ${destinationName}`,
+        edges: combinedEdges,
+      },
+      edges: combinedEdges,
+      distances: combinedDistances,
+      totalKm: routeDistanceMeters / 1000,
+      avgSpeed: null,
+      maxSpeedLimit:
+        Math.max(...combinedEdges.map((e) => e.max_speed_limit || 0)) || null,
+      isRoute: true,
+    };
+
+    // Vận tốc trung bình theo dữ liệu giao thông thực tế thu được dọc tuyến
+    const trafficWithSpeed = trafficSegments.filter((s) => s.speedKmh);
+    if (trafficWithSpeed.length) {
+      const totalWithSpeed = trafficWithSpeed.reduce(
+        (sum, s) => sum + (s.speedDistanceMeters || s.distanceMeters),
+        0,
+      );
+      if (totalWithSpeed > 0) {
+        routeEntry.avgSpeed =
+          trafficWithSpeed.reduce(
+            (sum, s) =>
+              sum +
+              s.speedKmh * (s.speedDistanceMeters || s.distanceMeters),
+            0,
+          ) / totalWithSpeed;
+      }
+    }
+
+    showCorridorDetail(routeEntry);
+    updatePopupContent(routeEntry);
   }
 
   function createRouteSegment(points, trafficLevel) {

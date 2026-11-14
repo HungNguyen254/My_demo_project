@@ -56,6 +56,11 @@ document.addEventListener("DOMContentLoaded", () => {
   tabLogin.addEventListener("click", () => switchTab(true));
   tabRegister.addEventListener("click", () => switchTab(false));
 
+  // Hỗ trợ deep-link: login.html?tab=register -> mở sẵn tab Đăng ký
+  if (new URLSearchParams(window.location.search).get("tab") === "register") {
+    switchTab(false);
+  }
+
   function switchTab(showLogin) {
     tabLogin.classList.toggle("active", showLogin);
     tabRegister.classList.toggle("active", !showLogin);

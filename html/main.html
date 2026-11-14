@@ -19,7 +19,7 @@
       <nav class="menu">
         <a href="main.html" aria-current="page">Trang chủ</a>
         <a href="#forecast">Dự báo</a>
-        <a href="Map.html">Bản đồ</a>
+        <a href="Map.html" id="nav-map">Bản đồ</a>
         <a href="login.html" id="nav-auth">Đăng nhập</a>
         <a href="admin.html" id="nav-admin" hidden>Quản trị</a>
       </nav>
@@ -48,12 +48,13 @@
         </p>
         <div class="hero-actions">
           <a class="btn" href="#forecast">Xem dự báo ngay</a>
-          <a class="btn btn-outline" href="Map.html">Mở bản đồ</a>
+          <a class="btn btn-outline" href="Map.html" id="hero-map-btn">Mở bản đồ</a>
         </div>
       </section>
 
       <!-- ===== TRA CỨU DỰ BÁO (gọi API /predictions/forecast thật) ===== -->
-      <section class="section" id="forecast">
+      <!-- Chỉ hiện khi đã đăng nhập; khách vãng lai thấy màn hình khóa chức năng -->
+      <section class="section" id="forecast" data-auth-required hidden>
         <h2>Dự báo AI theo tuyến đường</h2>
         <p class="section-desc">
           Chọn tuyến đường, thời tiết và mốc thời gian tới — hệ thống gọi API dự
@@ -104,6 +105,21 @@
             Nhập tên tuyến đường để xem dự báo.
           </p>
         </form>
+
+        <!-- Màn hình khóa chức năng cho khách chưa đăng nhập -->
+        <div class="auth-gate card" id="forecast-auth-gate" hidden>
+          <h3>🔒 Tính năng dành cho thành viên</h3>
+          <p>
+            Dự báo AI theo tuyến đường chỉ dành cho người dùng đã đăng nhập.
+            Đăng ký miễn phí để xem dự báo tắc đường theo khung giờ.
+          </p>
+          <div class="auth-gate-actions">
+            <a class="btn" href="login.html">Đăng nhập</a>
+            <a class="btn btn-outline" href="login.html?tab=register"
+              >Đăng ký</a
+            >
+          </div>
+        </div>
 
         <div class="forecast-result" id="fc-result" hidden>
           <div class="fc-head">
